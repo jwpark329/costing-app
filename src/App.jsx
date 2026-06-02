@@ -1,11 +1,27 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   Calculator, LayoutDashboard, FileSpreadsheet, TrendingUp, 
   DollarSign, Package, Plus, Image as ImageIcon, Trash2, 
-  ChevronRight, ChevronDown, ChevronUp 
+  ChevronRight, ChevronDown, ChevronUp, Download, Upload,
+  BarChart3, Calendar, Lock, User, LogIn, Cloud
 } from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, onSnapshot, setDoc, deleteDoc, doc, writeBatch } from 'firebase/firestore';
 
-// 1. 초기 샘플 데이터
+// Firebase 초기화 (Canvas 내장 환경 변수 활용)
+let app, auth, db, appId;
+try {
+  const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+  appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+} catch (e) {
+  console.error("Firebase init error:", e);
+}
+
+// 1. 초기 샘플 데이터 (xxl, fab1Loss, fab2Loss 추가)
 const initialData = [
   { 
     id: 1, 
@@ -13,9 +29,9 @@ const initialData = [
     item: 'L/S V-NECK', 
     imageUrl: 'https://images.unsplash.com/photo-1576566588028-4147f3842f27?w=150&q=80', 
     po: 'V04-007811', delivery: '2026-07-15', color: '010 BLACK', 
-    s: 1200, m: 500, l: 0, xl: 0, 
-    fab1Name: '2X2 RIB', fab1Cons: 1.25, fab1Price: 2.25,
-    fab2Name: '', fab2Cons: 0, fab2Price: 0,
+    s: 1200, m: 500, l: 0, xl: 0, xxl: 0,
+    fab1Name: '2X2 RIB', fab1Loss: 3, fab1Cons: 1.25, fab1Price: 2.25,
+    fab2Name: '', fab2Loss: 0, fab2Cons: 0, fab2Price: 0,
     trimThread: 0.05, trimButton: 0, trimPrint: 0.1, trimLabel: 0.08,
     cmt: 1.05, fob: 5.50 
   },
@@ -25,9 +41,9 @@ const initialData = [
     item: 'S/S T-SHIRT (COLOR BLOCK)', 
     imageUrl: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=150&q=80', 
     po: 'T01-001122', delivery: '2026-08-20', color: '030 WHITE/NAVY', 
-    s: 3000, m: 4000, l: 2000, xl: 1000, 
-    fab1Name: 'JERSEY (BODY)', fab1Cons: 0.65, fab1Price: 1.95,
-    fab2Name: 'JERSEY (SLEEVE)', fab2Cons: 0.25, fab2Price: 2.10,
+    s: 3000, m: 4000, l: 2000, xl: 1000, xxl: 500,
+    fab1Name: 'JERSEY (BODY)', fab1Loss: 5, fab1Cons: 0.65, fab1Price: 1.95,
+    fab2Name: 'JERSEY (SLEEVE)', fab2Loss: 5, fab2Cons: 0.25, fab2Price: 2.10,
     trimThread: 0.05, trimButton: 0, trimPrint: 0, trimLabel: 0.08,
     cmt: 0.95, fob: 4.80 
   },
@@ -37,15 +53,83 @@ const initialData = [
     item: 'S/S T-SHIRT (COLOR BLOCK)', 
     imageUrl: '', 
     po: 'T01-001123', delivery: '2026-08-25', color: '050 RED/BLACK', 
-    s: 1000, m: 1500, l: 1500, xl: 500, 
-    fab1Name: 'JERSEY (BODY)', fab1Cons: 0.65, fab1Price: 1.95,
-    fab2Name: 'JERSEY (SLEEVE)', fab2Cons: 0.25, fab2Price: 2.10,
+    s: 1000, m: 1500, l: 1500, xl: 500, xxl: 200,
+    fab1Name: 'JERSEY (BODY)', fab1Loss: 5, fab1Cons: 0.65, fab1Price: 1.95,
+    fab2Name: 'JERSEY (SLEEVE)', fab2Loss: 5, fab2Cons: 0.25, fab2Price: 2.10,
     trimThread: 0.05, trimButton: 0, trimPrint: 0, trimLabel: 0.08,
     cmt: 0.95, fob: 4.80 
   }
 ];
 
+// Tab 이동을 위한 필드 순서 배열
+const editableColumns = [
+  'style', 'item', 'po', 'delivery', 'color', 
+  's', 'm', 'l', 'xl', 'xxl', 'fob', 
+  'fab1Name', 'fab1Loss', 'fab1Cons', 'fab1Price', 
+  'fab2Name', 'fab2Loss', 'fab2Cons', 'fab2Price', 
+  'trimThread', 'trimButton', 'trimPrint', 'trimLabel', 'cmt'
+];
+
 export default function App() {
+  // 로그인 상태 관리 추가
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loginId, setLoginId] = useState("");
+  const [loginPw, setLoginPw] = useState("");
+  const [loginError, setLoginError] = useState("");
+
+  // Firebase 실시간 연동 상태 추가
+  const [firebaseUser, setFirebaseUser] = useState(null);
+  const [isSynced, setIsSynced] = useState(false);
+
+  // 1) Firebase 로그인 인증 처리 (보이지 않는 백그라운드 연동)
+  useEffect(() => {
+    if (!auth) return;
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (e) {
+        console.error("Auth error:", e);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setFirebaseUser(u);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // 2) 클라우드 DB 연동 및 자동 불러오기
+  useEffect(() => {
+    if (!firebaseUser || !db) return;
+    const ordersRef = collection(db, 'artifacts', appId, 'users', firebaseUser.uid, 'orders');
+    
+    const unsubscribe = onSnapshot(ordersRef, (snapshot) => {
+      const fetchedData = snapshot.docs.map(d => d.data());
+      
+      if (snapshot.docs.length === 0) {
+        // 최초 접속 시 빈 화면 대신 초기 샘플 데이터로 클라우드 DB 세팅
+        const batch = writeBatch(db);
+        initialData.forEach(item => {
+          const docRef = doc(db, 'artifacts', appId, 'users', firebaseUser.uid, 'orders', String(item.id));
+          batch.set(docRef, item);
+        });
+        batch.commit().catch(console.error);
+      } else {
+        // 클라우드 데이터를 화면에 적용하고 동기화 완료 아이콘 켜기
+        setData(fetchedData);
+        setIsSynced(true);
+      }
+    }, (error) => {
+      console.error("Firestore snapshot error:", error);
+    });
+    
+    return () => unsubscribe();
+  }, [firebaseUser]);
+
   const [activeTab, setActiveTab] = useState('sheet');
   const [data, setData] = useState(initialData);
   const [showTrims, setShowTrims] = useState(false);
@@ -56,37 +140,83 @@ export default function App() {
   const [editValue, setEditValue] = useState("");
 
   const fileInputRef = useRef(null);
+  const csvInputRef = useRef(null);
   const [editingImageId, setEditingImageId] = useState(null);
+
+  // 대시보드 필터 상태 추가
+  const [selectedItemFilter, setSelectedItemFilter] = useState('ALL');
+  const [selectedMonthFilter, setSelectedMonthFilter] = useState('ALL');
 
   const handleDoubleClick = (id, field, value) => {
     setEditingCell({ id, field });
     setEditValue(value === 0 && typeof value === 'number' ? "" : value);
   };
 
-  const handleSave = () => {
+  // 8자리 숫자를 YYYY-MM-DD 형태로 포맷팅 (Ex: 20260801 -> 2026-08-01)
+  const formatDeliveryDate = (val) => {
+    const strVal = String(val).trim();
+    if (/^\d{8}$/.test(strVal)) {
+      return `${strVal.slice(0, 4)}-${strVal.slice(4, 6)}-${strVal.slice(6, 8)}`;
+    }
+    return strVal;
+  };
+
+  const handleSaveAndMove = (direction = null) => {
     if (!editingCell) return;
     const { id, field } = editingCell;
     
-    setData(prevData => prevData.map(row => {
-      if (row.id === id) {
-        const isStringField = ['style', 'item', 'imageUrl', 'po', 'delivery', 'color', 'fab1Name', 'fab2Name'].includes(field);
-        let newValue = editValue;
-        
-        if (!isStringField) {
-          newValue = parseFloat(editValue);
-          if (isNaN(newValue)) newValue = 0;
-        }
-        
-        return { ...row, [field]: newValue };
+    let newData = [...data];
+    const rowIndex = newData.findIndex(row => row.id === id);
+    if (rowIndex === -1) return;
+
+    let row = { ...newData[rowIndex] };
+    const isStringField = ['style', 'item', 'imageUrl', 'po', 'delivery', 'color', 'fab1Name', 'fab2Name'].includes(field);
+    
+    let newValue = editValue;
+    
+    if (field === 'delivery') {
+      newValue = formatDeliveryDate(newValue);
+    } else if (!isStringField) {
+      newValue = parseFloat(editValue);
+      if (isNaN(newValue)) newValue = 0;
+    }
+    
+    row[field] = newValue;
+    newData[rowIndex] = row;
+    setData(newData);
+
+    // [자동 저장] 수정한 행(Row)을 클라우드 DB에 즉시 업데이트
+    if (firebaseUser && db) {
+      setDoc(doc(db, 'artifacts', appId, 'users', firebaseUser.uid, 'orders', String(row.id)), row).catch(console.error);
+    }
+
+    // 방향 이동 (Tab 처리)
+    if (direction) {
+      const currentFieldIndex = editableColumns.indexOf(field);
+      let nextFieldIndex = direction === 'next' ? currentFieldIndex + 1 : currentFieldIndex - 1;
+      
+      if (nextFieldIndex >= 0 && nextFieldIndex < editableColumns.length) {
+        const nextField = editableColumns[nextFieldIndex];
+        setEditingCell({ id, field: nextField });
+        setEditValue(row[nextField] === 0 ? "" : row[nextField]);
+      } else {
+        setEditingCell(null); // 줄의 끝/처음에 도달하면 에디팅 종료
       }
-      return row;
-    }));
-    setEditingCell(null);
+    } else {
+      setEditingCell(null);
+    }
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter') handleSave();
-    if (e.key === 'Escape') setEditingCell(null);
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSaveAndMove();
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      handleSaveAndMove(e.shiftKey ? 'prev' : 'next');
+    } else if (e.key === 'Escape') {
+      setEditingCell(null);
+    }
   };
 
   const handleImageClick = (id) => {
@@ -99,9 +229,18 @@ export default function App() {
     if (file && editingImageId) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setData(prevData => prevData.map(row => 
+        const updatedData = data.map(row => 
           row.id === editingImageId ? { ...row, imageUrl: reader.result } : row
-        ));
+        );
+        setData(updatedData);
+        
+        // [자동 저장] 이미지가 변경된 행을 클라우드 DB에 저장
+        if (firebaseUser && db) {
+          const rowToUpdate = updatedData.find(row => row.id === editingImageId);
+          if (rowToUpdate) {
+            setDoc(doc(db, 'artifacts', appId, 'users', firebaseUser.uid, 'orders', String(editingImageId)), rowToUpdate).catch(console.error);
+          }
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -111,17 +250,94 @@ export default function App() {
     const newRow = {
       id: Date.now(),
       style: 'NEW STYLE', item: 'NEW ITEM', imageUrl: '', po: 'NEW-PO', delivery: '', color: 'COLOR',
-      s: 0, m: 0, l: 0, xl: 0,
-      fab1Name: 'FABRIC 1', fab1Cons: 0, fab1Price: 0,
-      fab2Name: '', fab2Cons: 0, fab2Price: 0,
+      s: 0, m: 0, l: 0, xl: 0, xxl: 0,
+      fab1Name: 'FABRIC 1', fab1Loss: 0, fab1Cons: 0, fab1Price: 0,
+      fab2Name: '', fab2Loss: 0, fab2Cons: 0, fab2Price: 0,
       trimThread: 0, trimButton: 0, trimPrint: 0, trimLabel: 0,
       cmt: 0, fob: 0
     };
     setData([...data, newRow]);
+    
+    // [자동 저장] 새롭게 추가한 행(Row)을 클라우드 DB에 등록
+    if (firebaseUser && db) {
+      setDoc(doc(db, 'artifacts', appId, 'users', firebaseUser.uid, 'orders', String(newRow.id)), newRow).catch(console.error);
+    }
   };
 
   const handleDeleteRow = (id) => {
     setData(data.filter(row => row.id !== id));
+    
+    // [자동 저장] 삭제한 행(Row)을 클라우드 DB에서도 제거
+    if (firebaseUser && db) {
+      deleteDoc(doc(db, 'artifacts', appId, 'users', firebaseUser.uid, 'orders', String(id))).catch(console.error);
+    }
+  };
+
+  // CSV Export
+  const handleExportCSV = () => {
+    const headers = ['id', 'style', 'item', 'po', 'delivery', 'color', 's', 'm', 'l', 'xl', 'xxl', 'fob', 'fab1Name', 'fab1Loss', 'fab1Cons', 'fab1Price', 'fab2Name', 'fab2Loss', 'fab2Cons', 'fab2Price', 'trimThread', 'trimButton', 'trimPrint', 'trimLabel', 'cmt'];
+    const csvRows = [headers.join(',')];
+    
+    data.forEach(row => {
+      const values = headers.map(header => {
+        let val = row[header] === null || row[header] === undefined ? '' : row[header];
+        val = String(val).replace(/"/g, '""'); // 따옴표 이스케이프
+        return `"${val}"`;
+      });
+      csvRows.push(values.join(','));
+    });
+
+    const blob = new Blob(['\ufeff' + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' }); // 한글 깨짐 방지 BOM 추가
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `CostingMaster_Data_${new Date().toISOString().slice(0,10)}.csv`;
+    link.click();
+  };
+
+  // CSV Import
+  const handleImportCSV = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target.result;
+      const rows = text.split('\n');
+      if (rows.length < 2) return;
+      
+      const headers = rows[0].split(',').map(h => h.replace(/^"|"$/g, '').trim());
+      const newData = [];
+      const numericFields = ['id', 's', 'm', 'l', 'xl', 'xxl', 'fob', 'fab1Loss', 'fab1Cons', 'fab1Price', 'fab2Loss', 'fab2Cons', 'fab2Price', 'trimThread', 'trimButton', 'trimPrint', 'trimLabel', 'cmt'];
+
+      for (let i = 1; i < rows.length; i++) {
+        if (!rows[i].trim()) continue;
+        // 정규식: 쌍따옴표 안의 쉼표는 무시하고 분리
+        const values = rows[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(v => v.replace(/^"|"$/g, '').trim());
+        let newRow = { imageUrl: '' };
+        
+        headers.forEach((h, idx) => {
+          let val = values[idx];
+          if (numericFields.includes(h)) val = Number(val) || 0;
+          newRow[h] = val;
+        });
+        
+        if (!newRow.id) newRow.id = Date.now() + i; // ID가 없을 경우 생성
+        newData.push(newRow);
+      }
+      setData(newData);
+      e.target.value = null; // 입력 초기화
+      
+      // [자동 저장] CSV로 불러온 다량의 데이터를 클라우드 DB에 일괄 저장 (Batch)
+      if (firebaseUser && db) {
+        const batch = writeBatch(db);
+        newData.forEach(row => {
+           const docRef = doc(db, 'artifacts', appId, 'users', firebaseUser.uid, 'orders', String(row.id));
+           batch.set(docRef, row);
+        });
+        batch.commit().catch(console.error);
+      }
+    };
+    reader.readAsText(file);
   };
 
   const requestSort = (key) => {
@@ -138,14 +354,14 @@ export default function App() {
     if (isEditing) {
       return (
         <input 
-          type={format === 'text' ? (field === 'delivery' ? 'date' : 'text') : 'number'}
+          type="text" // Date 타입 대신 Text 사용하여 자유로운 입력 지원
           autoFocus 
           value={editValue} 
           onChange={(e) => setEditValue(e.target.value)} 
-          onBlur={handleSave} 
+          onBlur={() => handleSaveAndMove()} 
           onKeyDown={handleKeyDown} 
           className={`w-full min-w-[50px] border-2 border-blue-500 rounded bg-white shadow-sm focus:outline-none px-1 py-1 text-slate-800 text-xs ${align === 'right' ? 'text-right' : 'text-left'}`}
-          step={format === 'cons' ? "0.001" : "0.01"} 
+          placeholder={field === 'delivery' ? 'YYYYMMDD 또는 YYYY-MM-DD' : ''}
         />
       );
     }
@@ -154,13 +370,14 @@ export default function App() {
     
     if (format === 'currency') displayValue = `$${Number(row[field] || 0).toFixed(2)}`;
     else if (format === 'cons') displayValue = Number(row[field] || 0).toFixed(3);
+    else if (format === 'percent') displayValue = `${Number(row[field] || 0)}%`;
     else if (format === 'number') displayValue = Number(row[field] || 0).toLocaleString();
 
     return (
       <div 
         className={`cursor-pointer hover:bg-blue-100 hover:ring-1 hover:ring-blue-300 rounded px-1 py-1 -mx-1 transition-colors min-h-[20px] text-xs ${align === 'right' ? 'text-right' : 'text-left'}`}
         onDoubleClick={() => handleDoubleClick(row.id, field, row[field])} 
-        title="더블클릭하여 수정 (Enter로 저장)"
+        title="더블클릭하여 수정 (Tab으로 이동)"
       >
         {displayValue || (format === 'text' ? <span className="text-slate-300 italic">...</span> : displayValue)}
       </div>
@@ -188,10 +405,16 @@ export default function App() {
 
   const processedData = useMemo(() => {
     let calculatedData = data.map(row => {
-      const totalQty = (Number(row.s) || 0) + (Number(row.m) || 0) + (Number(row.l) || 0) + (Number(row.xl) || 0);
-      const fab1Cost = (Number(row.fab1Cons) || 0) * (Number(row.fab1Price) || 0);
-      const fab2Cost = (Number(row.fab2Cons) || 0) * (Number(row.fab2Price) || 0);
+      const totalQty = (Number(row.s) || 0) + (Number(row.m) || 0) + (Number(row.l) || 0) + (Number(row.xl) || 0) + (Number(row.xxl) || 0);
+      
+      // 원단 가격 계산 (요척 * 단가 * (1 + Loss%))
+      const fab1LossRate = 1 + ((Number(row.fab1Loss) || 0) / 100);
+      const fab2LossRate = 1 + ((Number(row.fab2Loss) || 0) / 100);
+      
+      const fab1Cost = (Number(row.fab1Cons) || 0) * (Number(row.fab1Price) || 0) * fab1LossRate;
+      const fab2Cost = (Number(row.fab2Cons) || 0) * (Number(row.fab2Price) || 0) * fab2LossRate;
       const totalFabricCost = fab1Cost + fab2Cost;
+      
       const totalTrimCost = (Number(row.trimThread) || 0) + (Number(row.trimButton) || 0) + (Number(row.trimPrint) || 0) + (Number(row.trimLabel) || 0);
       const unitCmtCost = Number(row.cmt) || 0;
       
@@ -251,6 +474,42 @@ export default function App() {
     return { totalOrderQty, grandTotalSales, grandTotalProfit, avgMarginRate };
   }, [processedData]);
 
+  // 대시보드용: 아이템별 실적 통계
+  const itemStats = useMemo(() => {
+    const stats = {};
+    processedData.filter(r => !r.isSubtotal).forEach(row => {
+      if (!row.item) return;
+      if (!stats[row.item]) {
+        stats[row.item] = { item: row.item, qty: 0, sales: 0, profit: 0 };
+      }
+      stats[row.item].qty += row.totalQty;
+      stats[row.item].sales += row.amount;
+      stats[row.item].profit += (row.profit * row.totalQty);
+    });
+    // 매출액 기준으로 내림차순 정렬
+    return Object.values(stats).sort((a, b) => b.sales - a.sales);
+  }, [processedData]);
+
+  // 대시보드용: 월별(Delivery) 실적 통계
+  const monthStats = useMemo(() => {
+    const stats = {};
+    processedData.filter(r => !r.isSubtotal).forEach(row => {
+      // YYYY-MM 형태로 추출 (없으면 '미정' 처리)
+      const month = (row.delivery && typeof row.delivery === 'string' && row.delivery.length >= 7) 
+        ? row.delivery.substring(0, 7) 
+        : 'TBD (미정)';
+        
+      if (!stats[month]) {
+        stats[month] = { month, qty: 0, sales: 0, profit: 0 };
+      }
+      stats[month].qty += row.totalQty;
+      stats[month].sales += row.amount;
+      stats[month].profit += (row.profit * row.totalQty);
+    });
+    // 월별 오름차순 정렬
+    return Object.values(stats).sort((a, b) => a.month.localeCompare(b.month));
+  }, [processedData]);
+
   const SortHeader = ({ label, sortKey, className = "", rowSpan, colSpan }) => (
     <th 
       rowSpan={rowSpan} colSpan={colSpan}
@@ -267,68 +526,170 @@ export default function App() {
     </th>
   );
 
+  // 인증되지 않은 경우 로그인 화면을 렌더링
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans">
+        <div className="bg-white p-8 rounded-2xl shadow-xl max-w-sm w-full border border-slate-100 animate-in fade-in zoom-in-95 duration-300">
+          <div className="flex flex-col items-center mb-8">
+            <div className="bg-blue-500/10 p-3 rounded-xl mb-4 border border-blue-500/20">
+              <Calculator className="w-8 h-8 text-blue-600" />
+            </div>
+            <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Costing Master V4</h1>
+            <p className="text-sm text-slate-500 mt-1">접근을 위해 로그인해 주세요.</p>
+          </div>
+          
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            if (loginId === 'jwpark' && loginPw === 'usvn123') {
+              setIsAuthenticated(true);
+              setLoginError('');
+            } else {
+              setLoginError('아이디 또는 비밀번호가 일치하지 않습니다.');
+            }
+          }} className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">ID</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <User className="h-4 w-4 text-slate-400" />
+                </div>
+                <input 
+                  type="text" 
+                  value={loginId}
+                  onChange={(e) => setLoginId(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
+                  placeholder="아이디를 입력하세요"
+                  autoFocus
+                />
+              </div>
+            </div>
+            
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Password</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Lock className="h-4 w-4 text-slate-400" />
+                </div>
+                <input 
+                  type="password" 
+                  value={loginPw}
+                  onChange={(e) => setLoginPw(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
+                  placeholder="비밀번호를 입력하세요"
+                />
+              </div>
+            </div>
+
+            {loginError && (
+              <div className="text-red-500 text-xs font-medium bg-red-50 p-2 rounded border border-red-100 text-center animate-in slide-in-from-top-1">
+                {loginError}
+              </div>
+            )}
+
+            <button 
+              type="submit" 
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors mt-6 shadow-sm"
+            >
+              <LogIn className="w-4 h-4" />
+              로그인
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // 로그인 성공 시 기존 메인 화면 렌더링
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-      <input 
-        type="file" 
-        accept="image/jpeg, image/png" 
-        ref={fileInputRef} 
-        onChange={handleFileChange} 
-        className="hidden" 
-      />
+      <input type="file" accept="image/jpeg, image/png" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+      <input type="file" accept=".csv" ref={csvInputRef} onChange={handleImportCSV} className="hidden" />
 
-      <header className="bg-slate-900 border-b border-slate-800 px-6 py-4 flex items-center justify-between sticky top-0 z-20 shadow-md">
-        <div className="flex items-center gap-3">
-          <div className="bg-blue-500/20 p-2 rounded-lg border border-blue-500/30">
-            <Calculator className="text-blue-400 w-6 h-6" />
+      <header className="bg-slate-900 border-b border-slate-800 px-6 py-4 flex flex-wrap items-center justify-between sticky top-0 z-20 shadow-md gap-4">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            <div className="bg-blue-500/20 p-2 rounded-lg border border-blue-500/30">
+              <Calculator className="text-blue-400 w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-white tracking-tight">Costing Master V4</h1>
+              <p className="text-xs text-slate-400">Garment Order & Cost Analysis</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-bold text-white tracking-tight">Costing Master V3</h1>
-            <p className="text-xs text-slate-400">Garment Order & Cost Analysis</p>
-          </div>
+          
+          {/* 클라우드 동기화 상태 표시기 */}
+          {isSynced && (
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-slate-800 border border-slate-700 rounded-full text-[10px] text-emerald-400 font-medium ml-4">
+              <Cloud className="w-3.5 h-3.5" />
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></div>
+              Cloud Synced
+            </div>
+          )}
         </div>
-        <div className="flex gap-2 bg-slate-800 p-1 rounded-lg border border-slate-700">
-          <button 
-            onClick={() => setActiveTab('sheet')}
-            className={`flex items-center gap-2 px-5 py-2 rounded-md font-medium text-sm transition-all duration-200 ${activeTab === 'sheet' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:text-white hover:bg-slate-700'}`}
-          >
-            <FileSpreadsheet className="w-4 h-4" /> Data Sheet
-          </button>
-          <button 
-            onClick={() => setActiveTab('dashboard')}
-            className={`flex items-center gap-2 px-5 py-2 rounded-md font-medium text-sm transition-all duration-200 ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:text-white hover:bg-slate-700'}`}
-          >
-            <LayoutDashboard className="w-4 h-4" /> Analytics
-          </button>
+        
+        <div className="flex flex-wrap gap-4 items-center">
+          <div className="flex gap-2">
+            <button 
+              onClick={() => csvInputRef.current?.click()}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-slate-800 text-slate-300 border border-slate-700 hover:text-white hover:bg-slate-700 transition-colors text-xs font-medium"
+              title="CSV 데이터 불러오기"
+            >
+              <Upload className="w-3.5 h-3.5" /> CSV 가져오기
+            </button>
+            <button 
+              onClick={handleExportCSV}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-slate-800 text-slate-300 border border-slate-700 hover:text-white hover:bg-slate-700 transition-colors text-xs font-medium"
+              title="현재 데이터를 CSV로 저장"
+            >
+              <Download className="w-3.5 h-3.5" /> CSV 내보내기
+            </button>
+          </div>
+          
+          <div className="flex gap-2 bg-slate-800 p-1 rounded-lg border border-slate-700">
+            <button 
+              onClick={() => setActiveTab('sheet')}
+              className={`flex items-center gap-2 px-5 py-2 rounded-md font-medium text-sm transition-all duration-200 ${activeTab === 'sheet' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:text-white hover:bg-slate-700'}`}
+            >
+              <FileSpreadsheet className="w-4 h-4" /> Data Sheet
+            </button>
+            <button 
+              onClick={() => setActiveTab('dashboard')}
+              className={`flex items-center gap-2 px-5 py-2 rounded-md font-medium text-sm transition-all duration-200 ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:text-white hover:bg-slate-700'}`}
+            >
+              <LayoutDashboard className="w-4 h-4" /> Analytics
+            </button>
+          </div>
         </div>
       </header>
 
       <main className="flex-1 p-4 lg:px-6 w-full flex flex-col">
         {activeTab === 'dashboard' && (
            <div className="space-y-6 animate-in fade-in duration-500 max-w-[1600px] mx-auto w-full">
+           {/* 상단 핵심 요약 카드 */}
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-             <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4 border-l-4 border-l-blue-500">
+             <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4 border-l-4 border-l-blue-500 hover:shadow-md transition-shadow">
                <div className="bg-blue-100 p-3 rounded-xl"><Package className="w-6 h-6 text-blue-600" /></div>
                <div>
                  <p className="text-sm font-medium text-slate-500">Total Volume</p>
                  <p className="text-2xl font-bold text-slate-900">{summary.totalOrderQty.toLocaleString()} <span className="text-sm font-normal text-slate-500">pcs</span></p>
                </div>
              </div>
-             <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4 border-l-4 border-l-green-500">
+             <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4 border-l-4 border-l-green-500 hover:shadow-md transition-shadow">
                <div className="bg-green-100 p-3 rounded-xl"><DollarSign className="w-6 h-6 text-green-600" /></div>
                <div>
                  <p className="text-sm font-medium text-slate-500">Total Sales Amount</p>
                  <p className="text-2xl font-bold text-slate-900">${summary.grandTotalSales.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
                </div>
              </div>
-             <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4 border-l-4 border-l-indigo-500">
+             <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4 border-l-4 border-l-indigo-500 hover:shadow-md transition-shadow">
                <div className="bg-indigo-100 p-3 rounded-xl"><TrendingUp className="w-6 h-6 text-indigo-600" /></div>
                <div>
                  <p className="text-sm font-medium text-slate-500">Total Profit</p>
                  <p className="text-2xl font-bold text-indigo-700">${summary.grandTotalProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
                </div>
              </div>
-             <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-center border-l-4 border-l-purple-500">
+             <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-center border-l-4 border-l-purple-500 hover:shadow-md transition-shadow">
                <div className="flex justify-between items-end mb-2">
                  <p className="text-sm font-medium text-slate-500">Blended Margin</p>
                  <p className={`text-2xl font-bold ${summary.avgMarginRate < 15 ? 'text-red-500' : 'text-emerald-500'}`}>
@@ -340,33 +701,147 @@ export default function App() {
                </div>
              </div>
            </div>
+
+           {/* 하단 상세 분석 영역 */}
+           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+             
+             {/* 아이템별 분석 패널 */}
+             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+               <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-2">
+                 <div className="flex items-center gap-2">
+                   <BarChart3 className="w-5 h-5 text-slate-500" />
+                   <h3 className="font-semibold text-slate-800">아이템별 실적 (Item Performance)</h3>
+                 </div>
+                 <select
+                   value={selectedItemFilter}
+                   onChange={(e) => setSelectedItemFilter(e.target.value)}
+                   className="text-xs border border-slate-200 rounded px-2 py-1 bg-white text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm cursor-pointer"
+                 >
+                   <option value="ALL">전체 아이템</option>
+                   {itemStats.map(s => (
+                     <option key={s.item} value={s.item}>{s.item}</option>
+                   ))}
+                 </select>
+               </div>
+               <div className="p-4 flex-1 overflow-auto">
+                 <div className="space-y-4">
+                   {(selectedItemFilter === 'ALL' ? itemStats : itemStats.filter(s => s.item === selectedItemFilter)).map((stat, idx) => {
+                     const salesPercent = summary.grandTotalSales > 0 ? (stat.sales / summary.grandTotalSales) * 100 : 0;
+                     const marginRate = stat.sales > 0 ? (stat.profit / stat.sales) * 100 : 0;
+                     return (
+                       <div key={idx} className="flex flex-col gap-2 p-3 rounded-lg border border-slate-100 bg-white hover:border-blue-200 hover:shadow-sm transition-all group">
+                         <div className="flex justify-between items-start gap-4">
+                           <div className="flex flex-col min-w-0">
+                             <span className="font-bold text-slate-800 text-sm group-hover:text-blue-700 transition-colors truncate">{stat.item}</span>
+                             <span className="text-xs text-slate-500 mt-0.5">{stat.qty.toLocaleString()} pcs</span>
+                           </div>
+                           <div className="flex flex-col items-end whitespace-nowrap shrink-0">
+                             <span className="font-bold text-slate-800 text-sm">
+                               ${stat.sales.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-xs font-normal text-slate-400 ml-1">Sales</span>
+                             </span>
+                             <span className={`text-xs font-bold mt-1 px-2 py-0.5 rounded-full bg-slate-50 ${marginRate < 15 ? 'text-red-600 border border-red-100' : 'text-emerald-600 border border-emerald-100'}`}>
+                               Profit: ${stat.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="font-medium opacity-80 ml-1">({marginRate.toFixed(1)}%)</span>
+                             </span>
+                           </div>
+                         </div>
+                         <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden flex mt-1">
+                           <div className="bg-blue-500 h-full rounded-full" style={{ width: `${salesPercent}%` }}></div>
+                         </div>
+                       </div>
+                     );
+                   })}
+                   {itemStats.length === 0 && <div className="text-center text-slate-400 py-8 text-sm">데이터가 없습니다.</div>}
+                 </div>
+               </div>
+             </div>
+
+             {/* 월별(납기) 분석 패널 */}
+             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+               <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-2">
+                 <div className="flex items-center gap-2">
+                   <Calendar className="w-5 h-5 text-slate-500" />
+                   <h3 className="font-semibold text-slate-800">월별 납기 예상 (Delivery Forecast)</h3>
+                 </div>
+                 <select
+                   value={selectedMonthFilter}
+                   onChange={(e) => setSelectedMonthFilter(e.target.value)}
+                   className="text-xs border border-slate-200 rounded px-2 py-1 bg-white text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm cursor-pointer"
+                 >
+                   <option value="ALL">전체 기간</option>
+                   {monthStats.map(s => (
+                     <option key={s.month} value={s.month}>{s.month}</option>
+                   ))}
+                 </select>
+               </div>
+               <div className="p-4 flex-1 overflow-auto">
+                 <table className="w-full text-sm text-left border-collapse">
+                   <thead className="text-slate-500 border-b-2 border-slate-100 text-xs uppercase bg-slate-50">
+                     <tr>
+                       <th className="py-2.5 px-3 font-semibold">Month</th>
+                       <th className="py-2.5 px-3 font-semibold text-right">Q'ty (pcs)</th>
+                       <th className="py-2.5 px-3 font-semibold text-right">Sales ($)</th>
+                       <th className="py-2.5 px-3 font-semibold text-right">Profit ($)</th>
+                       <th className="py-2.5 px-3 font-semibold text-right">Margin</th>
+                     </tr>
+                   </thead>
+                   <tbody className="divide-y divide-slate-100">
+                     {(selectedMonthFilter === 'ALL' ? monthStats : monthStats.filter(s => s.month === selectedMonthFilter)).map((stat, idx) => {
+                       const marginRate = stat.sales > 0 ? (stat.profit / stat.sales) * 100 : 0;
+                       return (
+                         <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                           <td className="py-3 px-3 font-medium text-slate-700">{stat.month}</td>
+                           <td className="py-3 px-3 text-right text-slate-600">{stat.qty.toLocaleString()}</td>
+                           <td className="py-3 px-3 text-right font-semibold text-slate-800">${stat.sales.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                           <td className="py-3 px-3 text-right font-medium text-indigo-600">${stat.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                           <td className="py-3 px-3 text-right">
+                             <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-bold ${marginRate >= 15 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                               {marginRate.toFixed(1)}%
+                             </span>
+                           </td>
+                         </tr>
+                       );
+                     })}
+                     {monthStats.length === 0 && (
+                       <tr>
+                         <td colSpan="5" className="text-center text-slate-400 py-8 text-sm">데이터가 없습니다.</td>
+                       </tr>
+                     )}
+                   </tbody>
+                 </table>
+               </div>
+             </div>
+
+           </div>
          </div>
         )}
 
         {activeTab === 'sheet' && (
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col flex-1 animate-in fade-in duration-300">
-            <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50">
+            <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50 flex-wrap gap-2">
               <div className="flex items-center gap-3">
                 <h2 className="font-semibold text-slate-800">Master Order Sheet</h2>
+                <span className="text-xs text-slate-500 bg-white px-2 py-1 rounded border border-slate-200 shadow-sm hidden sm:inline-block">
+                  💡 Tip: 더블클릭으로 수정하고, <strong>Tab</strong> 키로 다음 칸으로 바로 이동하세요.
+                </span>
               </div>
-              <div className="flex gap-3">
+              <div className="flex gap-2">
                 <button 
                   onClick={() => setShowFabric(!showFabric)}
-                  className={`flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg transition-colors shadow-sm border ${showFabric ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                  className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors shadow-sm border ${showFabric ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
                 >
                   {showFabric ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                  {showFabric ? 'Hide Fabric Detail' : 'Show Fabric Detail'}
+                  {showFabric ? 'Hide Fabric' : 'Show Fabric'}
                 </button>
                 <button 
                   onClick={() => setShowTrims(!showTrims)}
-                  className={`flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg transition-colors shadow-sm border ${showTrims ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                  className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors shadow-sm border ${showTrims ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
                 >
                   {showTrims ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                  {showTrims ? 'Hide Trims Detail' : 'Show Trims Detail'}
+                  {showTrims ? 'Hide Trims' : 'Show Trims'}
                 </button>
                 <button 
                   onClick={handleAddRow}
-                  className="flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                  className="flex items-center gap-1.5 text-xs font-medium text-white bg-blue-600 px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
                 >
                   <Plus className="w-4 h-4" /> Add Row
                 </button>
@@ -383,14 +858,16 @@ export default function App() {
                     <SortHeader label="PO" sortKey="po" rowSpan="2" className="bg-slate-100" />
                     <SortHeader label="Delivery" sortKey="delivery" rowSpan="2" className="bg-slate-100" />
                     <SortHeader label="Color" sortKey="color" rowSpan="2" className="bg-slate-100" />
-                    <th colSpan="4" className="px-2 py-1 border-r border-b border-slate-200 text-center font-semibold bg-slate-200/50">Qty</th>
+                    {/* Qty Span 5 (S,M,L,XL,XXL) */}
+                    <th colSpan="5" className="px-2 py-1 border-r border-b border-slate-200 text-center font-semibold bg-slate-200/50">Qty</th>
                     <SortHeader label="Total Q'ty" sortKey="totalQty" rowSpan="2" className="bg-blue-50/50 text-blue-800" />
                     <SortHeader label="FOB($)" sortKey="fob" rowSpan="2" className="bg-emerald-50/50 text-emerald-800" />
                     <SortHeader label="Amount" sortKey="amount" rowSpan="2" className="bg-emerald-100/50 text-emerald-900" />
                     {showFabric ? (
                       <>
-                        <th colSpan="3" className="px-2 py-1 border-r border-b border-slate-200 text-center font-semibold bg-amber-50/50 text-amber-800">Fabric 1</th>
-                        <th colSpan="3" className="px-2 py-1 border-r border-b border-slate-200 text-center font-semibold bg-orange-50/50 text-orange-800">Fabric 2</th>
+                        {/* Fabric Span 4 (Item, Loss, Cons, Price) */}
+                        <th colSpan="4" className="px-2 py-1 border-r border-b border-slate-200 text-center font-semibold bg-amber-50/50 text-amber-800">Fabric 1</th>
+                        <th colSpan="4" className="px-2 py-1 border-r border-b border-slate-200 text-center font-semibold bg-orange-50/50 text-orange-800">Fabric 2</th>
                       </>
                     ) : (
                       <SortHeader label="Fabric Total" sortKey="totalFabricCost" rowSpan="2" className="bg-amber-50/50 text-amber-800" />
@@ -409,12 +886,15 @@ export default function App() {
                     <th className="px-2 py-1 border-r border-b border-slate-200 text-right">M</th>
                     <th className="px-2 py-1 border-r border-b border-slate-200 text-right">L</th>
                     <th className="px-2 py-1 border-r border-b border-slate-200 text-right">XL</th>
+                    <th className="px-2 py-1 border-r border-b border-slate-200 text-right text-blue-600 font-bold">XXL</th>
                     {showFabric && (
                       <>
                         <th className="px-2 py-1 border-r border-b border-slate-200 text-left bg-amber-50/30 min-w-[80px]">Item</th>
+                        <th className="px-2 py-1 border-r border-b border-slate-200 text-right bg-amber-50/30 text-amber-700">Loss(%)</th>
                         <th className="px-2 py-1 border-r border-b border-slate-200 text-right bg-amber-50/30">Con's</th>
                         <th className="px-2 py-1 border-r border-b border-slate-200 text-right bg-amber-50/30">Price($)</th>
                         <th className="px-2 py-1 border-r border-b border-slate-200 text-left bg-orange-50/30 min-w-[80px]">Item</th>
+                        <th className="px-2 py-1 border-r border-b border-slate-200 text-right bg-orange-50/30 text-orange-700">Loss(%)</th>
                         <th className="px-2 py-1 border-r border-b border-slate-200 text-right bg-orange-50/30">Con's</th>
                         <th className="px-2 py-1 border-r border-b border-slate-200 text-right bg-orange-50/30">Price($)</th>
                       </>
@@ -435,7 +915,7 @@ export default function App() {
                     if (row.isSubtotal) {
                       return (
                         <tr key={row.id} className="bg-slate-100 font-bold border-y-2 border-slate-300 hover:bg-slate-200 transition-colors">
-                          <td colSpan="10" className="px-3 py-3 border-r border-slate-200 sticky left-0 z-10 bg-slate-100 text-right text-slate-600">
+                          <td colSpan="11" className="px-3 py-3 border-r border-slate-200 sticky left-0 z-10 bg-slate-100 text-right text-slate-600">
                             {row.style} <span className="text-[10px] font-normal ml-2">({row.count} items) Subtotal :</span>
                           </td>
                           <td className="px-2 py-3 border-r border-slate-200 text-right text-blue-700 bg-blue-100/50">
@@ -445,7 +925,7 @@ export default function App() {
                           <td className="px-2 py-3 border-r border-slate-200 text-right text-emerald-700 bg-emerald-100/50">
                             ${row.amount.toLocaleString(undefined, {minimumFractionDigits: 2})}
                           </td>
-                          <td colSpan={showFabric ? 6 : 1} className="border-r border-slate-200 bg-slate-100"></td>
+                          <td colSpan={showFabric ? 8 : 1} className="border-r border-slate-200 bg-slate-100"></td>
                           <td colSpan={showTrims ? 5 : 1} className="border-r border-slate-200 bg-slate-100"></td>
                           <td colSpan="2" className="border-r border-slate-200 bg-slate-100"></td>
                           <td className="px-2 py-3 border-r border-slate-200 text-right text-sky-700 bg-sky-100/50">
@@ -479,7 +959,9 @@ export default function App() {
                         <td className="px-2 py-2 border-r border-slate-100 w-12">{renderEditableCell(row, 'm', 'number', 'right')}</td>
                         <td className="px-2 py-2 border-r border-slate-100 w-12">{renderEditableCell(row, 'l', 'number', 'right')}</td>
                         <td className="px-2 py-2 border-r border-slate-100 w-12">{renderEditableCell(row, 'xl', 'number', 'right')}</td>
-                        <td className="px-2 py-2 border-r border-slate-100 text-right font-bold text-blue-700 bg-blue-50/20 align-middle">
+                        <td className="px-2 py-2 border-r border-slate-100 w-12 bg-blue-50/20">{renderEditableCell(row, 'xxl', 'number', 'right')}</td>
+                        
+                        <td className="px-2 py-2 border-r border-slate-100 text-right font-bold text-blue-700 bg-blue-50/40 align-middle">
                           {row.totalQty > 0 ? row.totalQty.toLocaleString() : '-'}
                         </td>
                         <td className="px-2 py-2 border-r border-slate-100 font-bold text-emerald-700 bg-emerald-50/10 w-16">
@@ -491,9 +973,12 @@ export default function App() {
                         {showFabric ? (
                           <>
                             <td className="px-2 py-2 border-r border-slate-100 bg-amber-50/10 text-slate-600">{renderEditableCell(row, 'fab1Name', 'text')}</td>
+                            <td className="px-2 py-2 border-r border-slate-100 bg-amber-50/20 w-14 text-amber-700">{renderEditableCell(row, 'fab1Loss', 'percent', 'right')}</td>
                             <td className="px-2 py-2 border-r border-slate-100 bg-amber-50/10 w-14">{renderEditableCell(row, 'fab1Cons', 'cons', 'right')}</td>
                             <td className="px-2 py-2 border-r border-slate-100 bg-amber-50/10 w-14">{renderEditableCell(row, 'fab1Price', 'currency', 'right')}</td>
+                            
                             <td className="px-2 py-2 border-r border-slate-100 bg-orange-50/10 text-slate-600">{renderEditableCell(row, 'fab2Name', 'text')}</td>
+                            <td className="px-2 py-2 border-r border-slate-100 bg-orange-50/20 w-14 text-orange-700">{renderEditableCell(row, 'fab2Loss', 'percent', 'right')}</td>
                             <td className="px-2 py-2 border-r border-slate-100 bg-orange-50/10 w-14">{renderEditableCell(row, 'fab2Cons', 'cons', 'right')}</td>
                             <td className="px-2 py-2 border-r border-slate-100 bg-orange-50/10 w-14">{renderEditableCell(row, 'fab2Price', 'currency', 'right')}</td>
                           </>
