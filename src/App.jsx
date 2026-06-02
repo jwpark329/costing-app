@@ -3,25 +3,9 @@ import {
   Calculator, LayoutDashboard, FileSpreadsheet, TrendingUp, 
   DollarSign, Package, Plus, Image as ImageIcon, Trash2, 
   ChevronRight, ChevronDown, ChevronUp, Download, Upload,
-  BarChart3, Calendar, Lock, User, LogIn, Cloud
+  BarChart3, Calendar, Lock, User, LogIn, Save
 } from 'lucide-react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, setDoc, deleteDoc, doc, writeBatch } from 'firebase/firestore';
 
-// Firebase 초기화 (Canvas 내장 환경 변수 활용)
-let app, auth, db, appId;
-try {
-  const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
-  appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-} catch (e) {
-  console.error("Firebase init error:", e);
-}
-
-// 1. 초기 샘플 데이터 (xxl, fab1Loss, fab2Loss 추가)
 const initialData = [
   { 
     id: 1, 
@@ -61,7 +45,6 @@ const initialData = [
   }
 ];
 
-// Tab 이동을 위한 필드 순서 배열
 const editableColumns = [
   'style', 'item', 'po', 'delivery', 'color', 
   's', 'm', 'l', 'xl', 'xxl', 'fob', 
@@ -71,88 +54,51 @@ const editableColumns = [
 ];
 
 export default function App() {
-  // 로그인 상태 관리 추가
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loginId, setLoginId] = useState("");
   const [loginPw, setLoginPw] = useState("");
   const [loginError, setLoginError] = useState("");
 
-  // Firebase 실시간 연동 상태 추가
-  const [firebaseUser, setFirebaseUser] = useState(null);
-  const [isSynced, setIsSynced] = useState(false);
+  const loadInitialData = () => {
+    try {
+      const saved = localStorage.getItem('costingMasterData');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error("데이터 불러오기 실패", e);
+    }
+    return initialData;
+  };
 
-  // 1) Firebase 로그인 인증 처리 (보이지 않는 백그라운드 연동)
-  useEffect(() => {
-    if (!auth) return;
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (e) {
-        console.error("Auth error:", e);
-      }
-    };
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setFirebaseUser(u);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // 2) 클라우드 DB 연동 및 자동 불러오기
-  useEffect(() => {
-    if (!firebaseUser || !db) return;
-    const ordersRef = collection(db, 'artifacts', appId, 'users', firebaseUser.uid, 'orders');
-    
-    const unsubscribe = onSnapshot(ordersRef, (snapshot) => {
-      const fetchedData = snapshot.docs.map(d => d.data());
-      
-      if (snapshot.docs.length === 0) {
-        // 최초 접속 시 빈 화면 대신 초기 샘플 데이터로 클라우드 DB 세팅
-        const batch = writeBatch(db);
-        initialData.forEach(item => {
-          const docRef = doc(db, 'artifacts', appId, 'users', firebaseUser.uid, 'orders', String(item.id));
-          batch.set(docRef, item);
-        });
-        batch.commit().catch(console.error);
-      } else {
-        // 클라우드 데이터를 화면에 적용하고 동기화 완료 아이콘 켜기
-        setData(fetchedData);
-        setIsSynced(true);
-      }
-    }, (error) => {
-      console.error("Firestore snapshot error:", error);
-    });
-    
-    return () => unsubscribe();
-  }, [firebaseUser]);
-
+  const [data, setData] = useState(loadInitialData);
   const [activeTab, setActiveTab] = useState('sheet');
-  const [data, setData] = useState(initialData);
   const [showTrims, setShowTrims] = useState(false);
   const [showFabric, setShowFabric] = useState(true);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
 
   const [editingCell, setEditingCell] = useState(null);
   const [editValue, setEditValue] = useState("");
+  const [isSynced, setIsSynced] = useState(false);
 
   const fileInputRef = useRef(null);
   const csvInputRef = useRef(null);
   const [editingImageId, setEditingImageId] = useState(null);
 
-  // 대시보드 필터 상태 추가
   const [selectedItemFilter, setSelectedItemFilter] = useState('ALL');
   const [selectedMonthFilter, setSelectedMonthFilter] = useState('ALL');
+
+  const saveToLocal = (newData) => {
+    setData(newData);
+    localStorage.setItem('costingMasterData', JSON.stringify(newData));
+    
+    setIsSynced(true);
+    setTimeout(() => setIsSynced(false), 2000);
+  };
 
   const handleDoubleClick = (id, field, value) => {
     setEditingCell({ id, field });
     setEditValue(value === 0 && typeof value === 'number' ? "" : value);
   };
 
-  // 8자리 숫자를 YYYY-MM-DD 형태로 포맷팅 (Ex: 20260801 -> 2026-08-01)
   const formatDeliveryDate = (val) => {
     const strVal = String(val).trim();
     if (/^\d{8}$/.test(strVal)) {
@@ -183,14 +129,9 @@ export default function App() {
     
     row[field] = newValue;
     newData[rowIndex] = row;
-    setData(newData);
+    
+    saveToLocal(newData);
 
-    // [자동 저장] 수정한 행(Row)을 클라우드 DB에 즉시 업데이트
-    if (firebaseUser && db) {
-      setDoc(doc(db, 'artifacts', appId, 'users', firebaseUser.uid, 'orders', String(row.id)), row).catch(console.error);
-    }
-
-    // 방향 이동 (Tab 처리)
     if (direction) {
       const currentFieldIndex = editableColumns.indexOf(field);
       let nextFieldIndex = direction === 'next' ? currentFieldIndex + 1 : currentFieldIndex - 1;
@@ -200,7 +141,7 @@ export default function App() {
         setEditingCell({ id, field: nextField });
         setEditValue(row[nextField] === 0 ? "" : row[nextField]);
       } else {
-        setEditingCell(null); // 줄의 끝/처음에 도달하면 에디팅 종료
+        setEditingCell(null);
       }
     } else {
       setEditingCell(null);
@@ -232,15 +173,7 @@ export default function App() {
         const updatedData = data.map(row => 
           row.id === editingImageId ? { ...row, imageUrl: reader.result } : row
         );
-        setData(updatedData);
-        
-        // [자동 저장] 이미지가 변경된 행을 클라우드 DB에 저장
-        if (firebaseUser && db) {
-          const rowToUpdate = updatedData.find(row => row.id === editingImageId);
-          if (rowToUpdate) {
-            setDoc(doc(db, 'artifacts', appId, 'users', firebaseUser.uid, 'orders', String(editingImageId)), rowToUpdate).catch(console.error);
-          }
-        }
+        saveToLocal(updatedData);
       };
       reader.readAsDataURL(file);
     }
@@ -256,24 +189,13 @@ export default function App() {
       trimThread: 0, trimButton: 0, trimPrint: 0, trimLabel: 0,
       cmt: 0, fob: 0
     };
-    setData([...data, newRow]);
-    
-    // [자동 저장] 새롭게 추가한 행(Row)을 클라우드 DB에 등록
-    if (firebaseUser && db) {
-      setDoc(doc(db, 'artifacts', appId, 'users', firebaseUser.uid, 'orders', String(newRow.id)), newRow).catch(console.error);
-    }
+    saveToLocal([...data, newRow]);
   };
 
   const handleDeleteRow = (id) => {
-    setData(data.filter(row => row.id !== id));
-    
-    // [자동 저장] 삭제한 행(Row)을 클라우드 DB에서도 제거
-    if (firebaseUser && db) {
-      deleteDoc(doc(db, 'artifacts', appId, 'users', firebaseUser.uid, 'orders', String(id))).catch(console.error);
-    }
+    saveToLocal(data.filter(row => row.id !== id));
   };
 
-  // CSV Export
   const handleExportCSV = () => {
     const headers = ['id', 'style', 'item', 'po', 'delivery', 'color', 's', 'm', 'l', 'xl', 'xxl', 'fob', 'fab1Name', 'fab1Loss', 'fab1Cons', 'fab1Price', 'fab2Name', 'fab2Loss', 'fab2Cons', 'fab2Price', 'trimThread', 'trimButton', 'trimPrint', 'trimLabel', 'cmt'];
     const csvRows = [headers.join(',')];
@@ -281,20 +203,19 @@ export default function App() {
     data.forEach(row => {
       const values = headers.map(header => {
         let val = row[header] === null || row[header] === undefined ? '' : row[header];
-        val = String(val).replace(/"/g, '""'); // 따옴표 이스케이프
+        val = String(val).replace(/"/g, '""');
         return `"${val}"`;
       });
       csvRows.push(values.join(','));
     });
 
-    const blob = new Blob(['\ufeff' + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' }); // 한글 깨짐 방지 BOM 추가
+    const blob = new Blob(['\ufeff' + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = `CostingMaster_Data_${new Date().toISOString().slice(0,10)}.csv`;
     link.click();
   };
 
-  // CSV Import
   const handleImportCSV = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -311,7 +232,6 @@ export default function App() {
 
       for (let i = 1; i < rows.length; i++) {
         if (!rows[i].trim()) continue;
-        // 정규식: 쌍따옴표 안의 쉼표는 무시하고 분리
         const values = rows[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(v => v.replace(/^"|"$/g, '').trim());
         let newRow = { imageUrl: '' };
         
@@ -321,21 +241,12 @@ export default function App() {
           newRow[h] = val;
         });
         
-        if (!newRow.id) newRow.id = Date.now() + i; // ID가 없을 경우 생성
+        if (!newRow.id) newRow.id = Date.now() + i;
         newData.push(newRow);
       }
-      setData(newData);
-      e.target.value = null; // 입력 초기화
       
-      // [자동 저장] CSV로 불러온 다량의 데이터를 클라우드 DB에 일괄 저장 (Batch)
-      if (firebaseUser && db) {
-        const batch = writeBatch(db);
-        newData.forEach(row => {
-           const docRef = doc(db, 'artifacts', appId, 'users', firebaseUser.uid, 'orders', String(row.id));
-           batch.set(docRef, row);
-        });
-        batch.commit().catch(console.error);
-      }
+      saveToLocal(newData);
+      e.target.value = null;
     };
     reader.readAsText(file);
   };
@@ -354,13 +265,13 @@ export default function App() {
     if (isEditing) {
       return (
         <input 
-          type="text" // Date 타입 대신 Text 사용하여 자유로운 입력 지원
+          type="text" 
           autoFocus 
           value={editValue} 
           onChange={(e) => setEditValue(e.target.value)} 
           onBlur={() => handleSaveAndMove()} 
           onKeyDown={handleKeyDown} 
-          className={`w-full min-w-[50px] border-2 border-blue-500 rounded bg-white shadow-sm focus:outline-none px-1 py-1 text-slate-800 text-xs ${align === 'right' ? 'text-right' : 'text-left'}`}
+          className={"w-full min-w-[50px] border-2 border-blue-500 rounded bg-white shadow-sm focus:outline-none px-1 py-1 text-slate-800 text-xs " + (align === 'right' ? 'text-right' : 'text-left')}
           placeholder={field === 'delivery' ? 'YYYYMMDD 또는 YYYY-MM-DD' : ''}
         />
       );
@@ -368,14 +279,14 @@ export default function App() {
 
     let displayValue = row[field];
     
-    if (format === 'currency') displayValue = `$${Number(row[field] || 0).toFixed(2)}`;
+    if (format === 'currency') displayValue = "$" + Number(row[field] || 0).toFixed(2);
     else if (format === 'cons') displayValue = Number(row[field] || 0).toFixed(3);
-    else if (format === 'percent') displayValue = `${Number(row[field] || 0)}%`;
+    else if (format === 'percent') displayValue = Number(row[field] || 0) + "%";
     else if (format === 'number') displayValue = Number(row[field] || 0).toLocaleString();
 
     return (
       <div 
-        className={`cursor-pointer hover:bg-blue-100 hover:ring-1 hover:ring-blue-300 rounded px-1 py-1 -mx-1 transition-colors min-h-[20px] text-xs ${align === 'right' ? 'text-right' : 'text-left'}`}
+        className={"cursor-pointer hover:bg-blue-100 hover:ring-1 hover:ring-blue-300 rounded px-1 py-1 -mx-1 transition-colors min-h-[20px] text-xs " + (align === 'right' ? 'text-right' : 'text-left')}
         onDoubleClick={() => handleDoubleClick(row.id, field, row[field])} 
         title="더블클릭하여 수정 (Tab으로 이동)"
       >
@@ -407,7 +318,6 @@ export default function App() {
     let calculatedData = data.map(row => {
       const totalQty = (Number(row.s) || 0) + (Number(row.m) || 0) + (Number(row.l) || 0) + (Number(row.xl) || 0) + (Number(row.xxl) || 0);
       
-      // 원단 가격 계산 (요척 * 단가 * (1 + Loss%))
       const fab1LossRate = 1 + ((Number(row.fab1Loss) || 0) / 100);
       const fab2LossRate = 1 + ((Number(row.fab2Loss) || 0) / 100);
       
@@ -443,7 +353,7 @@ export default function App() {
     calculatedData.forEach((row, index) => {
       if (currentStyle !== row.style) {
         if (subtotal && subtotal.count > 0) {
-          finalData.push({ ...subtotal, isSubtotal: true, id: `subtotal-${currentStyle}` });
+          finalData.push({ ...subtotal, isSubtotal: true, id: "subtotal-" + currentStyle });
         }
         currentStyle = row.style;
         subtotal = { style: currentStyle, count: 0, totalQty: 0, amount: 0, totalProfit: 0 };
@@ -456,7 +366,7 @@ export default function App() {
       subtotal.totalProfit += (row.profit * row.totalQty);
 
       if (index === calculatedData.length - 1 && subtotal) {
-        finalData.push({ ...subtotal, isSubtotal: true, id: `subtotal-${currentStyle}` });
+        finalData.push({ ...subtotal, isSubtotal: true, id: "subtotal-" + currentStyle });
       }
     });
 
@@ -474,7 +384,6 @@ export default function App() {
     return { totalOrderQty, grandTotalSales, grandTotalProfit, avgMarginRate };
   }, [processedData]);
 
-  // 대시보드용: 아이템별 실적 통계
   const itemStats = useMemo(() => {
     const stats = {};
     processedData.filter(r => !r.isSubtotal).forEach(row => {
@@ -486,15 +395,12 @@ export default function App() {
       stats[row.item].sales += row.amount;
       stats[row.item].profit += (row.profit * row.totalQty);
     });
-    // 매출액 기준으로 내림차순 정렬
     return Object.values(stats).sort((a, b) => b.sales - a.sales);
   }, [processedData]);
 
-  // 대시보드용: 월별(Delivery) 실적 통계
   const monthStats = useMemo(() => {
     const stats = {};
     processedData.filter(r => !r.isSubtotal).forEach(row => {
-      // YYYY-MM 형태로 추출 (없으면 '미정' 처리)
       const month = (row.delivery && typeof row.delivery === 'string' && row.delivery.length >= 7) 
         ? row.delivery.substring(0, 7) 
         : 'TBD (미정)';
@@ -506,7 +412,6 @@ export default function App() {
       stats[month].sales += row.amount;
       stats[month].profit += (row.profit * row.totalQty);
     });
-    // 월별 오름차순 정렬
     return Object.values(stats).sort((a, b) => a.month.localeCompare(b.month));
   }, [processedData]);
 
@@ -514,7 +419,7 @@ export default function App() {
     <th 
       rowSpan={rowSpan} colSpan={colSpan}
       onClick={() => sortKey && requestSort(sortKey)}
-      className={`px-2 py-2 border-r border-b border-slate-200 font-semibold text-center ${sortKey ? 'cursor-pointer hover:bg-slate-200 transition-colors select-none' : ''} ${className}`}
+      className={"px-2 py-2 border-r border-b border-slate-200 font-semibold text-center " + (sortKey ? "cursor-pointer hover:bg-slate-200 transition-colors select-none " : "") + className}
       title={sortKey ? "클릭하여 정렬" : ""}
     >
       <div className="flex items-center justify-center gap-1">
@@ -526,7 +431,6 @@ export default function App() {
     </th>
   );
 
-  // 인증되지 않은 경우 로그인 화면을 렌더링
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans">
@@ -600,7 +504,6 @@ export default function App() {
     );
   }
 
-  // 로그인 성공 시 기존 메인 화면 렌더링
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
       <input type="file" accept="image/jpeg, image/png" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
@@ -618,12 +521,11 @@ export default function App() {
             </div>
           </div>
           
-          {/* 클라우드 동기화 상태 표시기 */}
           {isSynced && (
             <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-slate-800 border border-slate-700 rounded-full text-[10px] text-emerald-400 font-medium ml-4">
-              <Cloud className="w-3.5 h-3.5" />
+              <Save className="w-3.5 h-3.5" />
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></div>
-              Cloud Synced
+              Saved locally
             </div>
           )}
         </div>
@@ -649,13 +551,13 @@ export default function App() {
           <div className="flex gap-2 bg-slate-800 p-1 rounded-lg border border-slate-700">
             <button 
               onClick={() => setActiveTab('sheet')}
-              className={`flex items-center gap-2 px-5 py-2 rounded-md font-medium text-sm transition-all duration-200 ${activeTab === 'sheet' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:text-white hover:bg-slate-700'}`}
+              className={"flex items-center gap-2 px-5 py-2 rounded-md font-medium text-sm transition-all duration-200 " + (activeTab === 'sheet' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:text-white hover:bg-slate-700')}
             >
               <FileSpreadsheet className="w-4 h-4" /> Data Sheet
             </button>
             <button 
               onClick={() => setActiveTab('dashboard')}
-              className={`flex items-center gap-2 px-5 py-2 rounded-md font-medium text-sm transition-all duration-200 ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:text-white hover:bg-slate-700'}`}
+              className={"flex items-center gap-2 px-5 py-2 rounded-md font-medium text-sm transition-all duration-200 " + (activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:text-white hover:bg-slate-700')}
             >
               <LayoutDashboard className="w-4 h-4" /> Analytics
             </button>
@@ -666,7 +568,6 @@ export default function App() {
       <main className="flex-1 p-4 lg:px-6 w-full flex flex-col">
         {activeTab === 'dashboard' && (
            <div className="space-y-6 animate-in fade-in duration-500 max-w-[1600px] mx-auto w-full">
-           {/* 상단 핵심 요약 카드 */}
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
              <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4 border-l-4 border-l-blue-500 hover:shadow-md transition-shadow">
                <div className="bg-blue-100 p-3 rounded-xl"><Package className="w-6 h-6 text-blue-600" /></div>
@@ -679,33 +580,30 @@ export default function App() {
                <div className="bg-green-100 p-3 rounded-xl"><DollarSign className="w-6 h-6 text-green-600" /></div>
                <div>
                  <p className="text-sm font-medium text-slate-500">Total Sales Amount</p>
-                 <p className="text-2xl font-bold text-slate-900">${summary.grandTotalSales.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+                 <p className="text-2xl font-bold text-slate-900">{"$" + summary.grandTotalSales.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
                </div>
              </div>
              <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4 border-l-4 border-l-indigo-500 hover:shadow-md transition-shadow">
                <div className="bg-indigo-100 p-3 rounded-xl"><TrendingUp className="w-6 h-6 text-indigo-600" /></div>
                <div>
                  <p className="text-sm font-medium text-slate-500">Total Profit</p>
-                 <p className="text-2xl font-bold text-indigo-700">${summary.grandTotalProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+                 <p className="text-2xl font-bold text-indigo-700">{"$" + summary.grandTotalProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
                </div>
              </div>
              <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-center border-l-4 border-l-purple-500 hover:shadow-md transition-shadow">
                <div className="flex justify-between items-end mb-2">
                  <p className="text-sm font-medium text-slate-500">Blended Margin</p>
-                 <p className={`text-2xl font-bold ${summary.avgMarginRate < 15 ? 'text-red-500' : 'text-emerald-500'}`}>
+                 <p className={"text-2xl font-bold " + (summary.avgMarginRate < 15 ? 'text-red-500' : 'text-emerald-500')}>
                    {summary.avgMarginRate.toFixed(1)}%
                  </p>
                </div>
                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                 <div className={`h-full ${summary.avgMarginRate < 15 ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(summary.avgMarginRate, 100)}%` }}></div>
+                 <div className={"h-full " + (summary.avgMarginRate < 15 ? 'bg-red-500' : 'bg-emerald-500')} style={{ width: Math.min(summary.avgMarginRate, 100) + "%" }}></div>
                </div>
              </div>
            </div>
 
-           {/* 하단 상세 분석 영역 */}
            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-             
-             {/* 아이템별 분석 패널 */}
              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
                <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-2">
                  <div className="flex items-center gap-2">
@@ -737,15 +635,15 @@ export default function App() {
                            </div>
                            <div className="flex flex-col items-end whitespace-nowrap shrink-0">
                              <span className="font-bold text-slate-800 text-sm">
-                               ${stat.sales.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-xs font-normal text-slate-400 ml-1">Sales</span>
+                               {"$" + stat.sales.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-xs font-normal text-slate-400 ml-1">Sales</span>
                              </span>
-                             <span className={`text-xs font-bold mt-1 px-2 py-0.5 rounded-full bg-slate-50 ${marginRate < 15 ? 'text-red-600 border border-red-100' : 'text-emerald-600 border border-emerald-100'}`}>
-                               Profit: ${stat.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="font-medium opacity-80 ml-1">({marginRate.toFixed(1)}%)</span>
+                             <span className={"text-xs font-bold mt-1 px-2 py-0.5 rounded-full bg-slate-50 " + (marginRate < 15 ? 'text-red-600 border border-red-100' : 'text-emerald-600 border border-emerald-100')}>
+                               Profit: {"$" + stat.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="font-medium opacity-80 ml-1">({marginRate.toFixed(1)}%)</span>
                              </span>
                            </div>
                          </div>
                          <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden flex mt-1">
-                           <div className="bg-blue-500 h-full rounded-full" style={{ width: `${salesPercent}%` }}></div>
+                           <div className="bg-blue-500 h-full rounded-full" style={{ width: salesPercent + "%" }}></div>
                          </div>
                        </div>
                      );
@@ -755,7 +653,6 @@ export default function App() {
                </div>
              </div>
 
-             {/* 월별(납기) 분석 패널 */}
              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
                <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-2">
                  <div className="flex items-center gap-2">
@@ -791,11 +688,11 @@ export default function App() {
                          <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
                            <td className="py-3 px-3 font-medium text-slate-700">{stat.month}</td>
                            <td className="py-3 px-3 text-right text-slate-600">{stat.qty.toLocaleString()}</td>
-                           <td className="py-3 px-3 text-right font-semibold text-slate-800">${stat.sales.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
-                           <td className="py-3 px-3 text-right font-medium text-indigo-600">${stat.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                           <td className="py-3 px-3 text-right font-semibold text-slate-800">{"$" + stat.sales.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                           <td className="py-3 px-3 text-right font-medium text-indigo-600">{"$" + stat.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
                            <td className="py-3 px-3 text-right">
-                             <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-bold ${marginRate >= 15 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                               {marginRate.toFixed(1)}%
+                             <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700">
+                               {marginRate.toFixed(1) + "%"}
                              </span>
                            </td>
                          </tr>
@@ -827,14 +724,14 @@ export default function App() {
               <div className="flex gap-2">
                 <button 
                   onClick={() => setShowFabric(!showFabric)}
-                  className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors shadow-sm border ${showFabric ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                  className={"flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors shadow-sm border " + (showFabric ? "bg-amber-100 text-amber-700 border-amber-200" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50")}
                 >
                   {showFabric ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                   {showFabric ? 'Hide Fabric' : 'Show Fabric'}
                 </button>
                 <button 
                   onClick={() => setShowTrims(!showTrims)}
-                  className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors shadow-sm border ${showTrims ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                  className={"flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors shadow-sm border " + (showTrims ? "bg-purple-100 text-purple-700 border-purple-200" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50")}
                 >
                   {showTrims ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                   {showTrims ? 'Hide Trims' : 'Show Trims'}
@@ -858,14 +755,12 @@ export default function App() {
                     <SortHeader label="PO" sortKey="po" rowSpan="2" className="bg-slate-100" />
                     <SortHeader label="Delivery" sortKey="delivery" rowSpan="2" className="bg-slate-100" />
                     <SortHeader label="Color" sortKey="color" rowSpan="2" className="bg-slate-100" />
-                    {/* Qty Span 5 (S,M,L,XL,XXL) */}
                     <th colSpan="5" className="px-2 py-1 border-r border-b border-slate-200 text-center font-semibold bg-slate-200/50">Qty</th>
                     <SortHeader label="Total Q'ty" sortKey="totalQty" rowSpan="2" className="bg-blue-50/50 text-blue-800" />
                     <SortHeader label="FOB($)" sortKey="fob" rowSpan="2" className="bg-emerald-50/50 text-emerald-800" />
                     <SortHeader label="Amount" sortKey="amount" rowSpan="2" className="bg-emerald-100/50 text-emerald-900" />
                     {showFabric ? (
                       <>
-                        {/* Fabric Span 4 (Item, Loss, Cons, Price) */}
                         <th colSpan="4" className="px-2 py-1 border-r border-b border-slate-200 text-center font-semibold bg-amber-50/50 text-amber-800">Fabric 1</th>
                         <th colSpan="4" className="px-2 py-1 border-r border-b border-slate-200 text-center font-semibold bg-orange-50/50 text-orange-800">Fabric 2</th>
                       </>
@@ -923,13 +818,13 @@ export default function App() {
                           </td>
                           <td className="border-r border-slate-200 bg-slate-100"></td>
                           <td className="px-2 py-3 border-r border-slate-200 text-right text-emerald-700 bg-emerald-100/50">
-                            ${row.amount.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                            {"$" + row.amount.toLocaleString(undefined, {minimumFractionDigits: 2})}
                           </td>
                           <td colSpan={showFabric ? 8 : 1} className="border-r border-slate-200 bg-slate-100"></td>
                           <td colSpan={showTrims ? 5 : 1} className="border-r border-slate-200 bg-slate-100"></td>
                           <td colSpan="2" className="border-r border-slate-200 bg-slate-100"></td>
                           <td className="px-2 py-3 border-r border-slate-200 text-right text-sky-700 bg-sky-100/50">
-                            ${row.totalProfit.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                            {"$" + row.totalProfit.toLocaleString(undefined, {minimumFractionDigits: 2})}
                           </td>
                           <td colSpan="2" className="bg-slate-100"></td>
                         </tr>
@@ -968,7 +863,7 @@ export default function App() {
                           {renderEditableCell(row, 'fob', 'currency', 'right')}
                         </td>
                         <td className="px-2 py-2 border-r border-slate-100 text-right font-bold text-emerald-800 bg-emerald-100/20 align-middle text-sm">
-                          ${row.amount.toLocaleString(undefined, {minimumFractionDigits: 2})}
+                          {"$" + row.amount.toLocaleString(undefined, {minimumFractionDigits: 2})}
                         </td>
                         {showFabric ? (
                           <>
@@ -984,7 +879,7 @@ export default function App() {
                           </>
                         ) : (
                           <td className="px-2 py-2 border-r border-slate-100 bg-amber-50/10 text-right font-semibold align-middle text-amber-700">
-                            ${row.totalFabricCost.toFixed(2)}
+                            {"$" + row.totalFabricCost.toFixed(2)}
                           </td>
                         )}
                         {showTrims && (
@@ -996,14 +891,14 @@ export default function App() {
                           </>
                         )}
                         <td className="px-2 py-2 border-r border-slate-100 bg-purple-100/30 text-right font-semibold align-middle">
-                          ${row.totalTrimCost.toFixed(2)}
+                          {"$" + row.totalTrimCost.toFixed(2)}
                         </td>
                         <td className="px-2 py-2 border-r border-slate-100 bg-indigo-50/10 w-16">{renderEditableCell(row, 'cmt', 'currency', 'right')}</td>
                         <td className="px-2 py-2 border-r border-slate-100 text-right font-bold text-slate-800 bg-slate-100/80 align-middle">
-                          ${row.unitTotalCost.toFixed(2)}
+                          {"$" + row.unitTotalCost.toFixed(2)}
                         </td>
                         <td className="px-2 py-2 border-r border-slate-100 text-right font-bold text-sky-700 bg-sky-50/20 align-middle text-sm">
-                          ${row.profit.toFixed(2)}
+                          {"$" + row.profit.toFixed(2)}
                         </td>
                         <td className="px-2 py-2 border-r border-slate-100 text-right font-bold bg-sky-50/20 align-middle">
                           {row.totalQty > 0 ? (
