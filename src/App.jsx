@@ -58,6 +58,33 @@ const formatDeliveryDate = (val) => {
   return strVal;
 };
 
+// 날짜 데이터에서 YYYY-MM 형태의 월별 키를 정확히 추출하는 헬퍼 함수
+const getMonthKey = (val) => {
+  if (!val) return 'TBD';
+  const strVal = String(val).trim();
+  
+  // YYYYMMDD 형태인 경우
+  if (/^\d{8}$/.test(strVal)) {
+    return `${strVal.slice(0, 4)}-${strVal.slice(4, 6)}`;
+  }
+  
+  // YYMMDD 형태인 경우 (예: 250115)
+  if (/^\d{6}$/.test(strVal)) {
+    return `20${strVal.slice(0, 2)}-${strVal.slice(2, 4)}`;
+  }
+  
+  // 25-01-15 또는 2025/01/15 처럼 구분자가 있는 경우
+  const parts = strVal.split(/[-/.]/);
+  if (parts.length >= 2) {
+    let year = parts[0];
+    if (year.length === 2) year = '20' + year; // 25 -> 2025로 변환
+    let month = parts[1].padStart(2, '0');
+    return `${year}-${month}`;
+  }
+  
+  return 'TBD';
+};
+
 const calculateRowCosts = (row) => {
   const totalQty = (Number(row.s) || 0) + (Number(row.m) || 0) + (Number(row.l) || 0) + (Number(row.xl) || 0) + (Number(row.xxl) || 0);
   const fab1LossRate = 1 + ((Number(row.fab1Loss) || 0) / 100);
@@ -173,6 +200,7 @@ const Dashboard = ({ data }) => {
   const [selectedItemFilter, setSelectedItemFilter] = useState('ALL');
   
   const [monthBuyerFilter, setMonthBuyerFilter] = useState('ALL');
+  const [selectedYearFilter, setSelectedYearFilter] = useState('ALL');
   const [selectedMonthFilter, setSelectedMonthFilter] = useState('ALL');
 
   const buyerOptions = useMemo(() => {
@@ -241,23 +269,45 @@ const Dashboard = ({ data }) => {
     };
   }, [baseData, itemBuyerFilter]);
 
-  // 하단 월별 납기 통계 (납기 전용 바이어 필터 적용)
-  const monthStatsList = useMemo(() => {
+  // 하단 월별 납기 통계 (납기 전용 바이어, 연도, 월 필터 적용)
+  const { rawMonthStats, availableYears } = useMemo(() => {
     const stats = {};
+    const years = new Set();
     
     baseData.forEach(row => {
       if (row.status === 'Cancel') return;
       if (monthBuyerFilter !== 'ALL' && row.buyer !== monthBuyerFilter) return;
 
-      const month = (row.delivery && typeof row.delivery === 'string' && row.delivery.length >= 7) ? row.delivery.substring(0, 7) : 'TBD';
-      if (!stats[month]) stats[month] = { month, qty: 0, sales: 0, profit: 0 };
-      stats[month].qty += row.totalQty;
-      stats[month].sales += row.amount;
-      stats[month].profit += (row.profit * row.totalQty);
+      const monthKey = getMonthKey(row.delivery); // 'YYYY-MM' 포맷으로 확실하게 통일 (날짜 합계)
+      if (monthKey !== 'TBD') {
+        years.add(monthKey.split('-')[0]); // 사용 가능한 연도만 추출
+      }
+
+      if (!stats[monthKey]) stats[monthKey] = { month: monthKey, qty: 0, sales: 0, profit: 0 };
+      stats[monthKey].qty += row.totalQty;
+      stats[monthKey].sales += row.amount;
+      stats[monthKey].profit += (row.profit * row.totalQty);
     });
     
-    return Object.values(stats).sort((a, b) => a.month.localeCompare(b.month));
+    return {
+      rawMonthStats: stats,
+      availableYears: Array.from(years).sort()
+    };
   }, [baseData, monthBuyerFilter]);
+
+  const monthStatsList = useMemo(() => {
+    return Object.values(rawMonthStats)
+      .filter(stat => {
+        if (stat.month === 'TBD') {
+          return selectedYearFilter === 'ALL' && selectedMonthFilter === 'ALL';
+        }
+        const [y, m] = stat.month.split('-');
+        if (selectedYearFilter !== 'ALL' && y !== selectedYearFilter) return false;
+        if (selectedMonthFilter !== 'ALL' && m !== selectedMonthFilter) return false;
+        return true;
+      })
+      .sort((a, b) => a.month.localeCompare(b.month));
+  }, [rawMonthStats, selectedYearFilter, selectedMonthFilter]);
 
   return (
     <div className="h-full overflow-y-auto pb-6">
@@ -448,7 +498,7 @@ const Dashboard = ({ data }) => {
                 <Calendar className="w-5 h-5 text-slate-500" />
                 <h3 className="font-semibold text-slate-800">월별 납기 (Delivery)</h3>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap justify-end">
                 <select
                   value={monthBuyerFilter} onChange={(e) => setMonthBuyerFilter(e.target.value)}
                   className="text-xs border border-slate-200 rounded px-2 py-1 bg-white text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm cursor-pointer"
@@ -456,11 +506,18 @@ const Dashboard = ({ data }) => {
                   {buyerOptions.map(b => <option key={b} value={b}>{b === 'ALL' ? '전체 바이어' : b}</option>)}
                 </select>
                 <select
-                  value={selectedMonthFilter} onChange={(e) => setSelectedMonthFilter(e.target.value)}
-                  className="text-xs border border-slate-200 rounded px-2 py-1 bg-white text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm cursor-pointer max-w-[100px]"
+                  value={selectedYearFilter} onChange={(e) => setSelectedYearFilter(e.target.value)}
+                  className="text-xs border border-slate-200 rounded px-2 py-1 bg-white text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm cursor-pointer max-w-[90px]"
                 >
-                  <option value="ALL">전체 기간</option>
-                  {monthStatsList.map(s => <option key={s.month} value={s.month}>{s.month}</option>)}
+                  <option value="ALL">전체 연도</option>
+                  {availableYears.map(y => <option key={y} value={y}>{y}년</option>)}
+                </select>
+                <select
+                  value={selectedMonthFilter} onChange={(e) => setSelectedMonthFilter(e.target.value)}
+                  className="text-xs border border-slate-200 rounded px-2 py-1 bg-white text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm cursor-pointer max-w-[80px]"
+                >
+                  <option value="ALL">전체 월</option>
+                  {['01','02','03','04','05','06','07','08','09','10','11','12'].map(m => <option key={m} value={m}>{m}월</option>)}
                 </select>
               </div>
             </div>
@@ -476,7 +533,7 @@ const Dashboard = ({ data }) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {(selectedMonthFilter === 'ALL' ? monthStatsList : monthStatsList.filter(s => s.month === selectedMonthFilter)).map((stat, idx) => {
+                  {monthStatsList.map((stat, idx) => {
                     const marginRate = stat.sales > 0 ? (stat.profit / stat.sales) * 100 : 0;
                     return (
                       <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
