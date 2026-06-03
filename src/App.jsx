@@ -9,6 +9,8 @@ import {
 const initialData = [
   { 
     id: 1, 
+    buyer: 'NIKE',
+    status: 'Open',
     style: '7834930018(6153480)',
     item: 'L/S V-NECK', 
     imageUrl: 'https://images.unsplash.com/photo-1576566588028-4147f3842f27?w=150&q=80', 
@@ -21,6 +23,8 @@ const initialData = [
   },
   { 
     id: 2, 
+    buyer: 'ADIDAS',
+    status: 'Invoiced',
     style: '992019388(771239)',
     item: 'S/S T-SHIRT (COLOR BLOCK)', 
     imageUrl: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=150&q=80', 
@@ -33,6 +37,8 @@ const initialData = [
   },
   { 
     id: 3, 
+    buyer: 'ADIDAS',
+    status: 'Cancel',
     style: '992019388(771239)',
     item: 'S/S T-SHIRT (COLOR BLOCK)', 
     imageUrl: '', 
@@ -46,7 +52,7 @@ const initialData = [
 ];
 
 const editableColumns = [
-  'style', 'item', 'po', 'delivery', 'color', 
+  'buyer', 'status', 'style', 'item', 'po', 'delivery', 'color', 
   's', 'm', 'l', 'xl', 'xxl', 'fob', 
   'fab1Name', 'fab1Loss', 'fab1Cons', 'fab1Price', 
   'fab2Name', 'fab2Loss', 'fab2Cons', 'fab2Price', 
@@ -85,6 +91,14 @@ export default function App() {
 
   const [selectedItemFilter, setSelectedItemFilter] = useState('ALL');
   const [selectedMonthFilter, setSelectedMonthFilter] = useState('ALL');
+  
+  // Dashboard Buyer Filter State
+  const [selectedBuyerDashboard, setSelectedBuyerDashboard] = useState('ALL');
+  
+  const buyerOptions = useMemo(() => {
+    const buyers = new Set(data.map(d => d.buyer).filter(Boolean));
+    return ['ALL', ...Array.from(buyers).sort()];
+  }, [data]);
 
   const saveToLocal = (newData) => {
     setData(newData);
@@ -116,7 +130,7 @@ export default function App() {
     if (rowIndex === -1) return;
 
     let row = { ...newData[rowIndex] };
-    const isStringField = ['style', 'item', 'imageUrl', 'po', 'delivery', 'color', 'fab1Name', 'fab2Name'].includes(field);
+    const isStringField = ['buyer', 'status', 'style', 'item', 'imageUrl', 'po', 'delivery', 'color', 'fab1Name', 'fab2Name'].includes(field);
     
     let newValue = editValue;
     
@@ -182,7 +196,7 @@ export default function App() {
   const handleAddRow = () => {
     const newRow = {
       id: Date.now(),
-      style: 'NEW STYLE', item: 'NEW ITEM', imageUrl: '', po: 'NEW-PO', delivery: '', color: 'COLOR',
+      buyer: 'NEW BUYER', status: 'Open', style: 'NEW STYLE', item: 'NEW ITEM', imageUrl: '', po: 'NEW-PO', delivery: '', color: 'COLOR',
       s: 0, m: 0, l: 0, xl: 0, xxl: 0,
       fab1Name: 'FABRIC 1', fab1Loss: 0, fab1Cons: 0, fab1Price: 0,
       fab2Name: '', fab2Loss: 0, fab2Cons: 0, fab2Price: 0,
@@ -197,7 +211,7 @@ export default function App() {
   };
 
   const handleExportCSV = () => {
-    const headers = ['id', 'style', 'item', 'po', 'delivery', 'color', 's', 'm', 'l', 'xl', 'xxl', 'fob', 'fab1Name', 'fab1Loss', 'fab1Cons', 'fab1Price', 'fab2Name', 'fab2Loss', 'fab2Cons', 'fab2Price', 'trimThread', 'trimButton', 'trimPrint', 'trimLabel', 'cmt'];
+    const headers = ['id', 'buyer', 'status', 'style', 'item', 'po', 'delivery', 'color', 's', 'm', 'l', 'xl', 'xxl', 'fob', 'fab1Name', 'fab1Loss', 'fab1Cons', 'fab1Price', 'fab2Name', 'fab2Loss', 'fab2Cons', 'fab2Price', 'trimThread', 'trimButton', 'trimPrint', 'trimLabel', 'cmt'];
     const csvRows = [headers.join(',')];
     
     data.forEach(row => {
@@ -242,6 +256,11 @@ export default function App() {
         });
         
         if (!newRow.id) newRow.id = Date.now() + i;
+        
+        // Ensure new rows have status/buyer if missing from old CSV imports
+        if (!newRow.status) newRow.status = 'Open';
+        if (!newRow.buyer) newRow.buyer = 'UNKNOWN';
+        
         newData.push(newRow);
       }
       
@@ -263,6 +282,22 @@ export default function App() {
     const isEditing = editingCell?.id === row.id && editingCell?.field === field;
     
     if (isEditing) {
+      if (field === 'status') {
+        return (
+          <select
+            autoFocus
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onBlur={() => handleSaveAndMove()}
+            onKeyDown={handleKeyDown}
+            className="w-full min-w-[70px] border-2 border-blue-500 rounded bg-white shadow-sm focus:outline-none px-1 py-1 text-slate-800 text-xs"
+          >
+            <option value="Open">Open</option>
+            <option value="Invoiced">Invoiced</option>
+            <option value="Cancel">Cancel</option>
+          </select>
+        );
+      }
       return (
         <input 
           type="text" 
@@ -272,12 +307,30 @@ export default function App() {
           onBlur={() => handleSaveAndMove()} 
           onKeyDown={handleKeyDown} 
           className={"w-full min-w-[50px] border-2 border-blue-500 rounded bg-white shadow-sm focus:outline-none px-1 py-1 text-slate-800 text-xs " + (align === 'right' ? 'text-right' : 'text-left')}
-          placeholder={field === 'delivery' ? 'YYYYMMDD 또는 YYYY-MM-DD' : ''}
+          placeholder={field === 'delivery' ? 'YYYYMMDD' : ''}
         />
       );
     }
 
     let displayValue = row[field];
+
+    if (format === 'status') {
+      const statusColors = {
+        'Open': 'bg-blue-50 text-blue-600 border-blue-200',
+        'Invoiced': 'bg-emerald-50 text-emerald-600 border-emerald-200',
+        'Cancel': 'bg-red-50 text-red-600 border-red-200'
+      };
+      const badgeClass = statusColors[displayValue] || 'bg-slate-50 text-slate-600 border-slate-200';
+      return (
+        <div
+          className={"cursor-pointer px-1 py-0.5 rounded border text-center text-[10px] font-bold transition-colors " + badgeClass}
+          onDoubleClick={() => handleDoubleClick(row.id, field, row[field] || 'Open')}
+          title="더블클릭하여 상태 변경 (Tab으로 이동)"
+        >
+          {displayValue || 'Open'}
+        </div>
+      );
+    }
     
     if (format === 'currency') displayValue = "$" + Number(row[field] || 0).toFixed(2);
     else if (format === 'cons') displayValue = Number(row[field] || 0).toFixed(3);
@@ -353,10 +406,14 @@ export default function App() {
     calculatedData.forEach((row, index) => {
       if (currentStyle !== row.style) {
         if (subtotal && subtotal.count > 0) {
-          finalData.push({ ...subtotal, isSubtotal: true, id: "subtotal-" + currentStyle });
+          const subtotalMargin = subtotal.amount > 0 ? (subtotal.totalProfit / subtotal.amount) * 100 : 0;
+          finalData.push({ ...subtotal, profitMargin: subtotalMargin, isSubtotal: true, id: "subtotal-" + currentStyle });
         }
         currentStyle = row.style;
-        subtotal = { style: currentStyle, count: 0, totalQty: 0, amount: 0, totalProfit: 0 };
+        subtotal = { 
+          style: currentStyle, count: 0, totalQty: 0, amount: 0, totalProfit: 0,
+          s: 0, m: 0, l: 0, xl: 0, xxl: 0
+        };
       }
 
       finalData.push({ ...row, isSubtotal: false });
@@ -364,30 +421,73 @@ export default function App() {
       subtotal.totalQty += row.totalQty;
       subtotal.amount += row.amount;
       subtotal.totalProfit += (row.profit * row.totalQty);
+      
+      subtotal.s += Number(row.s) || 0;
+      subtotal.m += Number(row.m) || 0;
+      subtotal.l += Number(row.l) || 0;
+      subtotal.xl += Number(row.xl) || 0;
+      subtotal.xxl += Number(row.xxl) || 0;
 
       if (index === calculatedData.length - 1 && subtotal) {
-        finalData.push({ ...subtotal, isSubtotal: true, id: "subtotal-" + currentStyle });
+        const subtotalMargin = subtotal.amount > 0 ? (subtotal.totalProfit / subtotal.amount) * 100 : 0;
+        finalData.push({ ...subtotal, profitMargin: subtotalMargin, isSubtotal: true, id: "subtotal-" + currentStyle });
       }
     });
 
     return finalData;
   }, [data, sortConfig]);
 
+  // 바이어 필터가 적용된 대시보드용 데이터
+  const dashboardData = useMemo(() => {
+    return processedData.filter(row => 
+      !row.isSubtotal && 
+      (selectedBuyerDashboard === 'ALL' || row.buyer === selectedBuyerDashboard)
+    );
+  }, [processedData, selectedBuyerDashboard]);
+
   const summary = useMemo(() => {
-    let totalOrderQty = 0, grandTotalCost = 0, grandTotalSales = 0, grandTotalProfit = 0;
-    processedData.filter(row => !row.isSubtotal).forEach(row => {
-      totalOrderQty += row.totalQty;
-      grandTotalSales += row.amount;
-      grandTotalProfit += (row.profit * row.totalQty);
+    let stats = {
+      total: { qty: 0, sales: 0, profit: 0, margin: 0 },
+      open: { qty: 0, sales: 0, profit: 0, margin: 0 },
+      invoiced: { qty: 0, sales: 0, profit: 0, margin: 0 }
+    };
+
+    dashboardData.forEach(row => {
+      const amt = row.amount || 0;
+      const pft = (row.profit || 0) * (row.totalQty || 0);
+      const q = row.totalQty || 0;
+      
+      // Cancel 상태는 전체 볼륨 및 수익에서 제외 처리
+      if (row.status !== 'Cancel') {
+        stats.total.qty += q;
+        stats.total.sales += amt;
+        stats.total.profit += pft;
+      }
+      
+      // 상태별 누적
+      if (row.status === 'Open') {
+        stats.open.qty += q;
+        stats.open.sales += amt;
+        stats.open.profit += pft;
+      } else if (row.status === 'Invoiced') {
+        stats.invoiced.qty += q;
+        stats.invoiced.sales += amt;
+        stats.invoiced.profit += pft;
+      }
     });
-    const avgMarginRate = grandTotalSales > 0 ? (grandTotalProfit / grandTotalSales) * 100 : 0;
-    return { totalOrderQty, grandTotalSales, grandTotalProfit, avgMarginRate };
-  }, [processedData]);
+
+    // 마진율(%) 계산
+    stats.total.margin = stats.total.sales > 0 ? (stats.total.profit / stats.total.sales) * 100 : 0;
+    stats.open.margin = stats.open.sales > 0 ? (stats.open.profit / stats.open.sales) * 100 : 0;
+    stats.invoiced.margin = stats.invoiced.sales > 0 ? (stats.invoiced.profit / stats.invoiced.sales) * 100 : 0;
+
+    return stats;
+  }, [dashboardData]);
 
   const itemStats = useMemo(() => {
     const stats = {};
-    processedData.filter(r => !r.isSubtotal).forEach(row => {
-      if (!row.item) return;
+    dashboardData.forEach(row => {
+      if (!row.item || row.status === 'Cancel') return; // Cancel 제외
       if (!stats[row.item]) {
         stats[row.item] = { item: row.item, qty: 0, sales: 0, profit: 0 };
       }
@@ -396,14 +496,15 @@ export default function App() {
       stats[row.item].profit += (row.profit * row.totalQty);
     });
     return Object.values(stats).sort((a, b) => b.sales - a.sales);
-  }, [processedData]);
+  }, [dashboardData]);
 
   const monthStats = useMemo(() => {
     const stats = {};
-    processedData.filter(r => !r.isSubtotal).forEach(row => {
+    dashboardData.forEach(row => {
+      if (row.status === 'Cancel') return; // Cancel 제외
       const month = (row.delivery && typeof row.delivery === 'string' && row.delivery.length >= 7) 
         ? row.delivery.substring(0, 7) 
-        : 'TBD (미정)';
+        : 'TBD';
         
       if (!stats[month]) {
         stats[month] = { month, qty: 0, sales: 0, profit: 0 };
@@ -413,7 +514,7 @@ export default function App() {
       stats[month].profit += (row.profit * row.totalQty);
     });
     return Object.values(stats).sort((a, b) => a.month.localeCompare(b.month));
-  }, [processedData]);
+  }, [dashboardData]);
 
   const SortHeader = ({ label, sortKey, className = "", rowSpan, colSpan }) => (
     <th 
@@ -505,11 +606,11 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
+    <div className="h-screen overflow-hidden bg-slate-50 flex flex-col font-sans">
       <input type="file" accept="image/jpeg, image/png" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
       <input type="file" accept=".csv" ref={csvInputRef} onChange={handleImportCSV} className="hidden" />
 
-      <header className="bg-slate-900 border-b border-slate-800 px-6 py-4 flex flex-wrap items-center justify-between sticky top-0 z-20 shadow-md gap-4">
+      <header className="bg-slate-900 border-b border-slate-800 px-6 py-4 flex flex-wrap items-center justify-between sticky top-0 z-50 shadow-md gap-4 shrink-0">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-3">
             <div className="bg-blue-500/20 p-2 rounded-lg border border-blue-500/30">
@@ -565,156 +666,248 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-1 p-4 lg:px-6 w-full flex flex-col">
+      <main className="flex-1 overflow-hidden p-4 lg:px-6 w-full flex flex-col">
         {activeTab === 'dashboard' && (
-           <div className="space-y-6 animate-in fade-in duration-500 max-w-[1600px] mx-auto w-full">
-           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-             <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4 border-l-4 border-l-blue-500 hover:shadow-md transition-shadow">
-               <div className="bg-blue-100 p-3 rounded-xl"><Package className="w-6 h-6 text-blue-600" /></div>
-               <div>
-                 <p className="text-sm font-medium text-slate-500">Total Volume</p>
-                 <p className="text-2xl font-bold text-slate-900">{summary.totalOrderQty.toLocaleString()} <span className="text-sm font-normal text-slate-500">pcs</span></p>
-               </div>
-             </div>
-             <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4 border-l-4 border-l-green-500 hover:shadow-md transition-shadow">
-               <div className="bg-green-100 p-3 rounded-xl"><DollarSign className="w-6 h-6 text-green-600" /></div>
-               <div>
-                 <p className="text-sm font-medium text-slate-500">Total Sales Amount</p>
-                 <p className="text-2xl font-bold text-slate-900">{"$" + summary.grandTotalSales.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
-               </div>
-             </div>
-             <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4 border-l-4 border-l-indigo-500 hover:shadow-md transition-shadow">
-               <div className="bg-indigo-100 p-3 rounded-xl"><TrendingUp className="w-6 h-6 text-indigo-600" /></div>
-               <div>
-                 <p className="text-sm font-medium text-slate-500">Total Profit</p>
-                 <p className="text-2xl font-bold text-indigo-700">{"$" + summary.grandTotalProfit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
-               </div>
-             </div>
-             <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-center border-l-4 border-l-purple-500 hover:shadow-md transition-shadow">
-               <div className="flex justify-between items-end mb-2">
-                 <p className="text-sm font-medium text-slate-500">Blended Margin</p>
-                 <p className={"text-2xl font-bold " + (summary.avgMarginRate < 15 ? 'text-red-500' : 'text-emerald-500')}>
-                   {summary.avgMarginRate.toFixed(1)}%
-                 </p>
-               </div>
-               <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                 <div className={"h-full " + (summary.avgMarginRate < 15 ? 'bg-red-500' : 'bg-emerald-500')} style={{ width: Math.min(summary.avgMarginRate, 100) + "%" }}></div>
-               </div>
-             </div>
-           </div>
-
-           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-               <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-2">
+           <div className="h-full overflow-y-auto pb-6">
+             <div className="space-y-4 animate-in fade-in duration-500 max-w-[1600px] mx-auto w-full">
+               
+               {/* 바이어 대시보드 상단 필터 */}
+               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                  <div className="flex items-center gap-2">
-                   <BarChart3 className="w-5 h-5 text-slate-500" />
-                   <h3 className="font-semibold text-slate-800">아이템별 실적 (Item Performance)</h3>
+                   <LayoutDashboard className="w-5 h-5 text-blue-600" />
+                   <h2 className="font-bold text-slate-800">Analytics Dashboard</h2>
                  </div>
-                 <select
-                   value={selectedItemFilter}
-                   onChange={(e) => setSelectedItemFilter(e.target.value)}
-                   className="text-xs border border-slate-200 rounded px-2 py-1 bg-white text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm cursor-pointer"
-                 >
-                   <option value="ALL">전체 아이템</option>
-                   {itemStats.map(s => (
-                     <option key={s.item} value={s.item}>{s.item}</option>
-                   ))}
-                 </select>
+                 <div className="flex items-center gap-3 w-full sm:w-auto">
+                   <label className="text-sm font-semibold text-slate-600 whitespace-nowrap">Buyer Filter :</label>
+                   <select
+                     value={selectedBuyerDashboard}
+                     onChange={(e) => setSelectedBuyerDashboard(e.target.value)}
+                     className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer flex-1 sm:flex-none min-w-[150px]"
+                   >
+                     {buyerOptions.map(b => (
+                       <option key={b} value={b}>{b === 'ALL' ? '전체 바이어 (All Buyers)' : b}</option>
+                     ))}
+                   </select>
+                 </div>
                </div>
-               <div className="p-4 flex-1 overflow-auto">
-                 <div className="space-y-4">
-                   {(selectedItemFilter === 'ALL' ? itemStats : itemStats.filter(s => s.item === selectedItemFilter)).map((stat, idx) => {
-                     const salesPercent = summary.grandTotalSales > 0 ? (stat.sales / summary.grandTotalSales) * 100 : 0;
-                     const marginRate = stat.sales > 0 ? (stat.profit / stat.sales) * 100 : 0;
-                     return (
-                       <div key={idx} className="flex flex-col gap-2 p-3 rounded-lg border border-slate-100 bg-white hover:border-blue-200 hover:shadow-sm transition-all group">
-                         <div className="flex justify-between items-start gap-4">
-                           <div className="flex flex-col min-w-0">
-                             <span className="font-bold text-slate-800 text-sm group-hover:text-blue-700 transition-colors truncate">{stat.item}</span>
-                             <span className="text-xs text-slate-500 mt-0.5">{stat.qty.toLocaleString()} pcs</span>
-                           </div>
-                           <div className="flex flex-col items-end whitespace-nowrap shrink-0">
-                             <span className="font-bold text-slate-800 text-sm">
-                               {"$" + stat.sales.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-xs font-normal text-slate-400 ml-1">Sales</span>
-                             </span>
-                             <span className={"text-xs font-bold mt-1 px-2 py-0.5 rounded-full bg-slate-50 " + (marginRate < 15 ? 'text-red-600 border border-red-100' : 'text-emerald-600 border border-emerald-100')}>
-                               Profit: {"$" + stat.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="font-medium opacity-80 ml-1">({marginRate.toFixed(1)}%)</span>
-                             </span>
-                           </div>
-                         </div>
-                         <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden flex mt-1">
-                           <div className="bg-blue-500 h-full rounded-full" style={{ width: salesPercent + "%" }}></div>
-                         </div>
+
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                 <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4 border-l-4 border-l-blue-500 hover:shadow-md transition-shadow">
+                   <div className="bg-blue-100 p-3 rounded-xl"><Package className="w-6 h-6 text-blue-600" /></div>
+                   <div>
+                     <p className="text-sm font-medium text-slate-500">Total Volume</p>
+                     <p className="text-2xl font-bold text-slate-900">{summary.total.qty.toLocaleString()} <span className="text-sm font-normal text-slate-500">pcs</span></p>
+                   </div>
+                 </div>
+                 
+                 {/* 상태별 매출이 반영된 카드 */}
+                 <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-center border-l-4 border-l-green-500 hover:shadow-md transition-shadow relative">
+                   <div className="flex justify-between items-start mb-3">
+                     <div>
+                       <p className="text-sm font-medium text-slate-500">Total Sales Amount</p>
+                       <p className="text-2xl font-bold text-slate-900">{"$" + summary.total.sales.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+                     </div>
+                     <div className="bg-green-100 p-2 rounded-xl hidden xl:block"><DollarSign className="w-5 h-5 text-green-600" /></div>
+                   </div>
+                   <div className="flex gap-2 mt-auto w-full">
+                     <span className="text-[10px] bg-blue-50 text-blue-700 px-2 py-1 rounded font-semibold border border-blue-100 flex-1 text-center truncate">
+                       Open: ${summary.open.sales.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                     </span>
+                     <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-1 rounded font-semibold border border-emerald-100 flex-1 text-center truncate">
+                       Inv: ${summary.invoiced.sales.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                     </span>
+                   </div>
+                 </div>
+
+                 <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4 border-l-4 border-l-indigo-500 hover:shadow-md transition-shadow">
+                   <div className="bg-indigo-100 p-3 rounded-xl"><TrendingUp className="w-6 h-6 text-indigo-600" /></div>
+                   <div>
+                     <p className="text-sm font-medium text-slate-500">Total Profit</p>
+                     <p className="text-2xl font-bold text-indigo-700">{"$" + summary.total.profit.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+                   </div>
+                 </div>
+                 <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-center border-l-4 border-l-purple-500 hover:shadow-md transition-shadow">
+                   <div className="flex justify-between items-end mb-2">
+                     <p className="text-sm font-medium text-slate-500">Blended Margin</p>
+                     <p className={"text-2xl font-bold " + (summary.total.margin < 15 ? 'text-red-500' : 'text-emerald-500')}>
+                       {summary.total.margin.toFixed(1)}%
+                     </p>
+                   </div>
+                   <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                     <div className={"h-full " + (summary.total.margin < 15 ? 'bg-red-500' : 'bg-emerald-500')} style={{ width: Math.min(summary.total.margin, 100) + "%" }}></div>
+                   </div>
+                 </div>
+               </div>
+
+               {/* --- 신규: Total / Open / Invoiced 요약 테이블 --- */}
+               <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+                 <div className="min-w-[600px]">
+                   <div className="grid grid-cols-5 bg-slate-50/80 border-b border-slate-100 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                     <div className="px-5 py-3 text-left">Status</div>
+                     <div className="px-5 py-3 text-right">Volume (pcs)</div>
+                     <div className="px-5 py-3 text-right">Sales Amount</div>
+                     <div className="px-5 py-3 text-right">Profit Amount</div>
+                     <div className="px-5 py-3 text-right">Margin</div>
+                   </div>
+                   <div className="divide-y divide-slate-100 text-sm">
+                     {/* Total Row */}
+                     <div className="grid grid-cols-5 items-center hover:bg-slate-50 transition-colors">
+                       <div className="px-5 py-3.5 font-bold text-slate-800 flex items-center gap-2">
+                         <div className="w-2 h-2 rounded-full bg-slate-700"></div> Total
                        </div>
-                     );
-                   })}
-                   {itemStats.length === 0 && <div className="text-center text-slate-400 py-8 text-sm">데이터가 없습니다.</div>}
+                       <div className="px-5 py-3.5 text-right font-semibold text-slate-700">{summary.total.qty.toLocaleString()}</div>
+                       <div className="px-5 py-3.5 text-right font-bold text-slate-800">${summary.total.sales.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                       <div className="px-5 py-3.5 text-right font-bold text-indigo-600">${summary.total.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                       <div className="px-5 py-3.5 text-right font-bold flex justify-end">
+                         <span className={`px-2 py-0.5 rounded-full text-xs ${summary.total.margin >= 15 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                           {summary.total.margin.toFixed(1)}%
+                         </span>
+                       </div>
+                     </div>
+                     {/* Open Row */}
+                     <div className="grid grid-cols-5 items-center hover:bg-slate-50 transition-colors">
+                       <div className="px-5 py-3.5 font-bold text-blue-600 flex items-center gap-2">
+                         <div className="w-2 h-2 rounded-full bg-blue-500"></div> Open
+                       </div>
+                       <div className="px-5 py-3.5 text-right font-medium text-slate-600">{summary.open.qty.toLocaleString()}</div>
+                       <div className="px-5 py-3.5 text-right font-semibold text-blue-700">${summary.open.sales.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                       <div className="px-5 py-3.5 text-right font-semibold text-blue-700">${summary.open.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                       <div className="px-5 py-3.5 text-right font-medium flex justify-end">
+                         <span className={`px-2 py-0.5 rounded-full text-xs ${summary.open.margin >= 15 ? 'bg-emerald-50 text-emerald-600' : summary.open.margin > 0 ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>
+                           {summary.open.margin.toFixed(1)}%
+                         </span>
+                       </div>
+                     </div>
+                     {/* Invoiced Row */}
+                     <div className="grid grid-cols-5 items-center hover:bg-slate-50 transition-colors">
+                       <div className="px-5 py-3.5 font-bold text-emerald-600 flex items-center gap-2">
+                         <div className="w-2 h-2 rounded-full bg-emerald-500"></div> Invoiced
+                       </div>
+                       <div className="px-5 py-3.5 text-right font-medium text-slate-600">{summary.invoiced.qty.toLocaleString()}</div>
+                       <div className="px-5 py-3.5 text-right font-semibold text-emerald-700">${summary.invoiced.sales.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                       <div className="px-5 py-3.5 text-right font-semibold text-emerald-700">${summary.invoiced.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                       <div className="px-5 py-3.5 text-right font-medium flex justify-end">
+                         <span className={`px-2 py-0.5 rounded-full text-xs ${summary.invoiced.margin >= 15 ? 'bg-emerald-50 text-emerald-600' : summary.invoiced.margin > 0 ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>
+                           {summary.invoiced.margin.toFixed(1)}%
+                         </span>
+                       </div>
+                     </div>
+                   </div>
                  </div>
                </div>
-             </div>
 
-             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-               <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-2">
-                 <div className="flex items-center gap-2">
-                   <Calendar className="w-5 h-5 text-slate-500" />
-                   <h3 className="font-semibold text-slate-800">월별 납기 예상 (Delivery Forecast)</h3>
+               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                   <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-2">
+                     <div className="flex items-center gap-2">
+                       <BarChart3 className="w-5 h-5 text-slate-500" />
+                       <h3 className="font-semibold text-slate-800">아이템별 실적 (Item Performance)</h3>
+                     </div>
+                     <select
+                       value={selectedItemFilter}
+                       onChange={(e) => setSelectedItemFilter(e.target.value)}
+                       className="text-xs border border-slate-200 rounded px-2 py-1 bg-white text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm cursor-pointer"
+                     >
+                       <option value="ALL">전체 아이템</option>
+                       {itemStats.map(s => (
+                         <option key={s.item} value={s.item}>{s.item}</option>
+                       ))}
+                     </select>
+                   </div>
+                   <div className="p-4 flex-1 overflow-auto">
+                     <div className="space-y-4">
+                       {(selectedItemFilter === 'ALL' ? itemStats : itemStats.filter(s => s.item === selectedItemFilter)).map((stat, idx) => {
+                         const salesPercent = summary.grandTotalSales > 0 ? (stat.sales / summary.grandTotalSales) * 100 : 0;
+                         const marginRate = stat.sales > 0 ? (stat.profit / stat.sales) * 100 : 0;
+                         return (
+                           <div key={idx} className="flex flex-col gap-2 p-3 rounded-lg border border-slate-100 bg-white hover:border-blue-200 hover:shadow-sm transition-all group">
+                             <div className="flex justify-between items-start gap-4">
+                               <div className="flex flex-col min-w-0">
+                                 <span className="font-bold text-slate-800 text-sm group-hover:text-blue-700 transition-colors truncate">{stat.item}</span>
+                                 <span className="text-xs text-slate-500 mt-0.5">{stat.qty.toLocaleString()} pcs</span>
+                               </div>
+                               <div className="flex flex-col items-end whitespace-nowrap shrink-0">
+                                 <span className="font-bold text-slate-800 text-sm">
+                                   {"$" + stat.sales.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-xs font-normal text-slate-400 ml-1">Sales</span>
+                                 </span>
+                                 <span className={"text-xs font-bold mt-1 px-2 py-0.5 rounded-full bg-slate-50 " + (marginRate < 15 ? 'text-red-600 border border-red-100' : 'text-emerald-600 border border-emerald-100')}>
+                                   Profit: {"$" + stat.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="font-medium opacity-80 ml-1">({marginRate.toFixed(1)}%)</span>
+                                 </span>
+                               </div>
+                             </div>
+                             <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden flex mt-1">
+                               <div className="bg-blue-500 h-full rounded-full" style={{ width: salesPercent + "%" }}></div>
+                             </div>
+                           </div>
+                         );
+                       })}
+                       {itemStats.length === 0 && <div className="text-center text-slate-400 py-8 text-sm">데이터가 없습니다.</div>}
+                     </div>
+                   </div>
                  </div>
-                 <select
-                   value={selectedMonthFilter}
-                   onChange={(e) => setSelectedMonthFilter(e.target.value)}
-                   className="text-xs border border-slate-200 rounded px-2 py-1 bg-white text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm cursor-pointer"
-                 >
-                   <option value="ALL">전체 기간</option>
-                   {monthStats.map(s => (
-                     <option key={s.month} value={s.month}>{s.month}</option>
-                   ))}
-                 </select>
-               </div>
-               <div className="p-4 flex-1 overflow-auto">
-                 <table className="w-full text-sm text-left border-collapse">
-                   <thead className="text-slate-500 border-b-2 border-slate-100 text-xs uppercase bg-slate-50">
-                     <tr>
-                       <th className="py-2.5 px-3 font-semibold">Month</th>
-                       <th className="py-2.5 px-3 font-semibold text-right">Q'ty (pcs)</th>
-                       <th className="py-2.5 px-3 font-semibold text-right">Sales ($)</th>
-                       <th className="py-2.5 px-3 font-semibold text-right">Profit ($)</th>
-                       <th className="py-2.5 px-3 font-semibold text-right">Margin</th>
-                     </tr>
-                   </thead>
-                   <tbody className="divide-y divide-slate-100">
-                     {(selectedMonthFilter === 'ALL' ? monthStats : monthStats.filter(s => s.month === selectedMonthFilter)).map((stat, idx) => {
-                       const marginRate = stat.sales > 0 ? (stat.profit / stat.sales) * 100 : 0;
-                       return (
-                         <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
-                           <td className="py-3 px-3 font-medium text-slate-700">{stat.month}</td>
-                           <td className="py-3 px-3 text-right text-slate-600">{stat.qty.toLocaleString()}</td>
-                           <td className="py-3 px-3 text-right font-semibold text-slate-800">{"$" + stat.sales.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
-                           <td className="py-3 px-3 text-right font-medium text-indigo-600">{"$" + stat.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
-                           <td className="py-3 px-3 text-right">
-                             <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700">
-                               {marginRate.toFixed(1) + "%"}
-                             </span>
-                           </td>
+
+                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                   <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-2">
+                     <div className="flex items-center gap-2">
+                       <Calendar className="w-5 h-5 text-slate-500" />
+                       <h3 className="font-semibold text-slate-800">월별 납기 예상 (Delivery Forecast)</h3>
+                     </div>
+                     <select
+                       value={selectedMonthFilter}
+                       onChange={(e) => setSelectedMonthFilter(e.target.value)}
+                       className="text-xs border border-slate-200 rounded px-2 py-1 bg-white text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm cursor-pointer"
+                     >
+                       <option value="ALL">전체 기간</option>
+                       {monthStats.map(s => (
+                         <option key={s.month} value={s.month}>{s.month}</option>
+                       ))}
+                     </select>
+                   </div>
+                   <div className="p-4 flex-1 overflow-auto">
+                     <table className="w-full text-sm text-left border-collapse">
+                       <thead className="text-slate-500 border-b-2 border-slate-100 text-xs uppercase bg-slate-50">
+                         <tr>
+                           <th className="py-2.5 px-3 font-semibold">Month</th>
+                           <th className="py-2.5 px-3 font-semibold text-right">Q'ty (pcs)</th>
+                           <th className="py-2.5 px-3 font-semibold text-right">Sales ($)</th>
+                           <th className="py-2.5 px-3 font-semibold text-right">Profit ($)</th>
+                           <th className="py-2.5 px-3 font-semibold text-right">Margin</th>
                          </tr>
-                       );
-                     })}
-                     {monthStats.length === 0 && (
-                       <tr>
-                         <td colSpan="5" className="text-center text-slate-400 py-8 text-sm">데이터가 없습니다.</td>
-                       </tr>
-                     )}
-                   </tbody>
-                 </table>
+                       </thead>
+                       <tbody className="divide-y divide-slate-100">
+                         {(selectedMonthFilter === 'ALL' ? monthStats : monthStats.filter(s => s.month === selectedMonthFilter)).map((stat, idx) => {
+                           const marginRate = stat.sales > 0 ? (stat.profit / stat.sales) * 100 : 0;
+                           return (
+                             <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                               <td className="py-3 px-3 font-medium text-slate-700">{stat.month}</td>
+                               <td className="py-3 px-3 text-right text-slate-600">{stat.qty.toLocaleString()}</td>
+                               <td className="py-3 px-3 text-right font-semibold text-slate-800">{"$" + stat.sales.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                               <td className="py-3 px-3 text-right font-medium text-indigo-600">{"$" + stat.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                               <td className="py-3 px-3 text-right">
+                                 <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700">
+                                   {marginRate.toFixed(1) + "%"}
+                                 </span>
+                               </td>
+                             </tr>
+                           );
+                         })}
+                         {monthStats.length === 0 && (
+                           <tr>
+                             <td colSpan="5" className="text-center text-slate-400 py-8 text-sm">데이터가 없습니다.</td>
+                           </tr>
+                         )}
+                       </tbody>
+                     </table>
+                   </div>
+                 </div>
                </div>
              </div>
-
            </div>
-         </div>
         )}
 
         {activeTab === 'sheet' && (
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col flex-1 animate-in fade-in duration-300">
-            <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50 flex-wrap gap-2">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col flex-1 animate-in fade-in duration-300 min-h-0">
+            <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50 flex-wrap gap-2 shrink-0">
               <div className="flex items-center gap-3">
                 <h2 className="font-semibold text-slate-800">Master Order Sheet</h2>
                 <span className="text-xs text-slate-500 bg-white px-2 py-1 rounded border border-slate-200 shadow-sm hidden sm:inline-block">
@@ -745,11 +938,13 @@ export default function App() {
               </div>
             </div>
             
-            <div className="overflow-x-auto overflow-y-auto flex-1 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-slate-100 [&::-webkit-scrollbar-thumb]:bg-slate-300 [&::-webkit-scrollbar-thumb]:rounded-full">
+            <div className="overflow-auto flex-1 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-slate-100 [&::-webkit-scrollbar-thumb]:bg-slate-300 [&::-webkit-scrollbar-thumb]:rounded-full">
               <table className="w-full text-xs text-left border-collapse min-w-[max-content]">
-                <thead className="text-slate-600 uppercase bg-slate-100 sticky top-0 z-10 shadow-sm">
+                <thead className="text-slate-600 uppercase bg-slate-100 sticky top-0 z-30 shadow-sm">
                   <tr>
-                    <SortHeader label="Style" sortKey="style" rowSpan="2" className="sticky left-0 z-20 bg-slate-100 min-w-[120px]" />
+                    <SortHeader label="Buyer" sortKey="buyer" rowSpan="2" className="sticky left-0 z-40 bg-slate-100 min-w-[100px]" />
+                    <SortHeader label="Status" sortKey="status" rowSpan="2" className="bg-slate-100 min-w-[70px]" />
+                    <SortHeader label="Style" sortKey="style" rowSpan="2" className="bg-slate-100 min-w-[120px]" />
                     <SortHeader label="Item" sortKey="item" rowSpan="2" className="bg-slate-100 min-w-[120px]" />
                     <SortHeader label="Image" rowSpan="2" className="bg-slate-100" />
                     <SortHeader label="PO" sortKey="po" rowSpan="2" className="bg-slate-100" />
@@ -810,9 +1005,15 @@ export default function App() {
                     if (row.isSubtotal) {
                       return (
                         <tr key={row.id} className="bg-slate-100 font-bold border-y-2 border-slate-300 hover:bg-slate-200 transition-colors">
-                          <td colSpan="11" className="px-3 py-3 border-r border-slate-200 sticky left-0 z-10 bg-slate-100 text-right text-slate-600">
+                          <td colSpan="8" className="px-3 py-3 border-r border-slate-200 sticky left-0 z-20 bg-slate-100 text-right text-slate-600">
                             {row.style} <span className="text-[10px] font-normal ml-2">({row.count} items) Subtotal :</span>
                           </td>
+                          <td className="px-2 py-3 border-r border-slate-200 text-right text-slate-700 bg-slate-200/50">{row.s.toLocaleString()}</td>
+                          <td className="px-2 py-3 border-r border-slate-200 text-right text-slate-700 bg-slate-200/50">{row.m.toLocaleString()}</td>
+                          <td className="px-2 py-3 border-r border-slate-200 text-right text-slate-700 bg-slate-200/50">{row.l.toLocaleString()}</td>
+                          <td className="px-2 py-3 border-r border-slate-200 text-right text-slate-700 bg-slate-200/50">{row.xl.toLocaleString()}</td>
+                          <td className="px-2 py-3 border-r border-slate-200 text-right text-blue-800 bg-blue-100/30">{row.xxl.toLocaleString()}</td>
+                          
                           <td className="px-2 py-3 border-r border-slate-200 text-right text-blue-700 bg-blue-100/50">
                             {row.totalQty.toLocaleString()}
                           </td>
@@ -820,19 +1021,30 @@ export default function App() {
                           <td className="px-2 py-3 border-r border-slate-200 text-right text-emerald-700 bg-emerald-100/50">
                             {"$" + row.amount.toLocaleString(undefined, {minimumFractionDigits: 2})}
                           </td>
+                          
                           <td colSpan={showFabric ? 8 : 1} className="border-r border-slate-200 bg-slate-100"></td>
                           <td colSpan={showTrims ? 5 : 1} className="border-r border-slate-200 bg-slate-100"></td>
                           <td colSpan="2" className="border-r border-slate-200 bg-slate-100"></td>
+                          
                           <td className="px-2 py-3 border-r border-slate-200 text-right text-sky-700 bg-sky-100/50">
                             {"$" + row.totalProfit.toLocaleString(undefined, {minimumFractionDigits: 2})}
                           </td>
-                          <td colSpan="2" className="bg-slate-100"></td>
+                          <td className="px-2 py-3 border-r border-slate-200 text-right text-sky-700 bg-sky-200/40">
+                            {row.profitMargin ? row.profitMargin.toFixed(1) + "%" : "0.0%"}
+                          </td>
+                          <td className="bg-slate-100"></td>
                         </tr>
                       );
                     }
                     return (
                       <tr key={row.id} className="hover:bg-blue-50/40 transition-colors group">
-                        <td className="px-3 py-2 border-r border-slate-100 sticky left-0 z-10 bg-white group-hover:bg-blue-50/40 font-bold text-slate-800 align-middle">
+                        <td className="px-3 py-2 border-r border-slate-100 sticky left-0 z-20 bg-white group-hover:bg-blue-50/40 font-bold text-slate-800 align-middle">
+                          {renderEditableCell(row, 'buyer', 'text')}
+                        </td>
+                        <td className="px-2 py-1 border-r border-slate-100 align-middle text-center">
+                          {renderEditableCell(row, 'status', 'status')}
+                        </td>
+                        <td className="px-3 py-2 border-r border-slate-100 font-bold text-slate-800 align-middle">
                           {renderEditableCell(row, 'style', 'text')}
                         </td>
                         <td className="px-3 py-2 border-r border-slate-100 font-semibold text-slate-700 align-middle">
