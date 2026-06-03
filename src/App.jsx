@@ -105,6 +105,35 @@ const calculateRowCosts = (row) => {
   return { ...row, totalQty, totalFabricCost, totalTrimCost, unitTotalCost, amount, profit, profitMargin };
 };
 
+// --- 마진율 다단계 색상 테마 헬퍼 함수 ---
+const getMarginBadgeClass = (margin) => {
+  if (margin < 0) return 'bg-red-100 text-red-700 border border-red-200';
+  if (margin < 3) return 'bg-slate-100 text-slate-700 border border-slate-200';
+  if (margin < 5) return 'bg-sky-100 text-sky-700 border border-sky-200';
+  if (margin < 10) return 'bg-blue-100 text-blue-700 border border-blue-200';
+  if (margin < 15) return 'bg-teal-100 text-teal-700 border border-teal-200';
+  return 'bg-emerald-100 text-emerald-700 border border-emerald-200';
+};
+
+const getMarginTextClass = (margin) => {
+  if (margin < 0) return 'text-red-600';
+  if (margin < 3) return 'text-slate-600';
+  if (margin < 5) return 'text-sky-600';
+  if (margin < 10) return 'text-blue-600';
+  if (margin < 15) return 'text-teal-600';
+  return 'text-emerald-600';
+};
+
+const getMarginBgClass = (margin) => {
+  if (margin < 0) return 'bg-red-500';
+  if (margin < 3) return 'bg-slate-400';
+  if (margin < 5) return 'bg-sky-500';
+  if (margin < 10) return 'bg-blue-500';
+  if (margin < 15) return 'bg-teal-500';
+  return 'bg-emerald-500';
+};
+// -----------------------------------------
+
 
 // ============================================================================
 // 2. LOGIN COMPONENT
@@ -370,12 +399,12 @@ const Dashboard = ({ data }) => {
           <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-center border-l-4 border-l-purple-500 hover:shadow-md transition-shadow">
             <div className="flex justify-between items-end mb-2">
               <p className="text-sm font-medium text-slate-500">Blended Margin</p>
-              <p className={"text-2xl font-bold " + (summary.total.margin < 15 ? 'text-red-500' : 'text-emerald-500')}>
+              <p className={"text-2xl font-bold " + getMarginTextClass(summary.total.margin)}>
                 {summary.total.margin.toFixed(1)}%
               </p>
             </div>
             <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-              <div className={"h-full " + (summary.total.margin < 15 ? 'bg-red-500' : 'bg-emerald-500')} style={{ width: Math.min(summary.total.margin, 100) + "%" }}></div>
+              <div className={"h-full " + getMarginBgClass(summary.total.margin)} style={{ width: Math.max(0, Math.min(summary.total.margin, 100)) + "%" }}></div>
             </div>
           </div>
         </div>
@@ -399,7 +428,7 @@ const Dashboard = ({ data }) => {
                 <div className="px-5 py-3.5 text-right font-bold text-slate-800">${summary.total.sales.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
                 <div className="px-5 py-3.5 text-right font-bold text-indigo-600">${summary.total.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
                 <div className="px-5 py-3.5 text-right font-bold flex justify-end">
-                  <span className={`px-2 py-0.5 rounded-full text-xs ${summary.total.margin >= 15 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                  <span className={`px-2 py-0.5 rounded-full text-xs ${getMarginBadgeClass(summary.total.margin)}`}>
                     {summary.total.margin.toFixed(1)}%
                   </span>
                 </div>
@@ -412,7 +441,7 @@ const Dashboard = ({ data }) => {
                 <div className="px-5 py-3.5 text-right font-semibold text-blue-700">${summary.open.sales.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
                 <div className="px-5 py-3.5 text-right font-semibold text-blue-700">${summary.open.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
                 <div className="px-5 py-3.5 text-right font-medium flex justify-end">
-                  <span className={`px-2 py-0.5 rounded-full text-xs ${summary.open.margin >= 15 ? 'bg-emerald-50 text-emerald-600' : summary.open.margin > 0 ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>
+                  <span className={`px-2 py-0.5 rounded-full text-xs ${getMarginBadgeClass(summary.open.margin)}`}>
                     {summary.open.margin.toFixed(1)}%
                   </span>
                 </div>
@@ -425,7 +454,7 @@ const Dashboard = ({ data }) => {
                 <div className="px-5 py-3.5 text-right font-semibold text-emerald-700">${summary.invoiced.sales.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
                 <div className="px-5 py-3.5 text-right font-semibold text-emerald-700">${summary.invoiced.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
                 <div className="px-5 py-3.5 text-right font-medium flex justify-end">
-                  <span className={`px-2 py-0.5 rounded-full text-xs ${summary.invoiced.margin >= 15 ? 'bg-emerald-50 text-emerald-600' : summary.invoiced.margin > 0 ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>
+                  <span className={`px-2 py-0.5 rounded-full text-xs ${getMarginBadgeClass(summary.invoiced.margin)}`}>
                     {summary.invoiced.margin.toFixed(1)}%
                   </span>
                 </div>
@@ -475,7 +504,7 @@ const Dashboard = ({ data }) => {
                           <span className="font-bold text-slate-800 text-sm">
                             {"$" + stat.sales.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="text-xs font-normal text-slate-400 ml-1">Sales</span>
                           </span>
-                          <span className={"text-xs font-bold mt-1 px-2 py-0.5 rounded-full bg-slate-50 " + (marginRate < 15 ? 'text-red-600 border border-red-100' : 'text-emerald-600 border border-emerald-100')}>
+                          <span className={"text-xs font-bold mt-1 px-2 py-0.5 rounded-full " + getMarginBadgeClass(marginRate)}>
                             Profit: {"$" + stat.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })} <span className="font-medium opacity-80 ml-1">({marginRate.toFixed(1)}%)</span>
                           </span>
                         </div>
@@ -542,7 +571,7 @@ const Dashboard = ({ data }) => {
                         <td className="py-3 px-3 text-right font-semibold text-slate-800">{"$" + stat.sales.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
                         <td className="py-3 px-3 text-right font-medium text-indigo-600">{"$" + stat.profit.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
                         <td className="py-3 px-3 text-right">
-                          <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700">
+                          <span className={"inline-block px-2 py-0.5 rounded-full text-[11px] font-bold " + getMarginBadgeClass(marginRate)}>
                             {marginRate.toFixed(1) + "%"}
                           </span>
                         </td>
@@ -875,7 +904,11 @@ const DataSheet = ({ data, onUpdateData }) => {
                     <td colSpan={showTrims ? 5 : 1} className="border-r border-slate-200 bg-slate-100"></td>
                     <td colSpan="2" className="border-r border-slate-200 bg-slate-100"></td>
                     <td className="px-2 py-3 border-r border-slate-200 text-right text-sky-700 bg-sky-100/50">{"$" + row.totalProfit.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td className="px-2 py-3 border-r border-slate-200 text-right text-sky-700 bg-sky-200/40">{row.profitMargin ? row.profitMargin.toFixed(1) + "%" : "0.0%"}</td>
+                    <td className="px-2 py-3 border-r border-slate-200 text-right bg-slate-100/50">
+                      <span className={"px-2 py-1 rounded text-xs font-bold " + getMarginBadgeClass(row.profitMargin || 0)}>
+                        {row.profitMargin ? row.profitMargin.toFixed(1) + "%" : "0.0%"}
+                      </span>
+                    </td>
                     <td className="bg-slate-100"></td>
                   </tr>
                 );
@@ -906,9 +939,9 @@ const DataSheet = ({ data, onUpdateData }) => {
                   <td className="px-2 py-2 border-r border-slate-100 bg-indigo-50/10 w-16">{renderEditableCell(row, 'cmt', 'currency', 'right')}</td>
                   <td className="px-2 py-2 border-r border-slate-100 text-right font-bold text-slate-800 bg-slate-100/80 align-middle">{"$" + row.unitTotalCost.toFixed(2)}</td>
                   <td className="px-2 py-2 border-r border-slate-100 text-right font-bold text-sky-700 bg-sky-50/20 align-middle text-sm">{"$" + row.profit.toFixed(2)}</td>
-                  <td className="px-2 py-2 border-r border-slate-100 text-right font-bold bg-sky-50/20 align-middle">
+                  <td className="px-2 py-2 border-r border-slate-100 text-right font-bold align-middle">
                     {row.totalQty > 0 ? (
-                      <span className={`px-2 py-0.5 rounded ${row.profitMargin >= 15 ? 'bg-sky-100 text-sky-700' : row.profitMargin > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                      <span className={`px-2 py-0.5 rounded text-[11px] ${getMarginBadgeClass(row.profitMargin)}`}>
                         {row.profitMargin.toFixed(1)}%
                       </span>
                     ) : '-'}
