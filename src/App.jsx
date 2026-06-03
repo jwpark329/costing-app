@@ -58,26 +58,22 @@ const formatDeliveryDate = (val) => {
   return strVal;
 };
 
-// 날짜 데이터에서 YYYY-MM 형태의 월별 키를 정확히 추출하는 헬퍼 함수
 const getMonthKey = (val) => {
   if (!val) return 'TBD';
   const strVal = String(val).trim();
   
-  // YYYYMMDD 형태인 경우
   if (/^\d{8}$/.test(strVal)) {
     return `${strVal.slice(0, 4)}-${strVal.slice(4, 6)}`;
   }
   
-  // YYMMDD 형태인 경우 (예: 250115)
   if (/^\d{6}$/.test(strVal)) {
     return `20${strVal.slice(0, 2)}-${strVal.slice(2, 4)}`;
   }
   
-  // 25-01-15 또는 2025/01/15 처럼 구분자가 있는 경우
   const parts = strVal.split(/[-/.]/);
   if (parts.length >= 2) {
     let year = parts[0];
-    if (year.length === 2) year = '20' + year; // 25 -> 2025로 변환
+    if (year.length === 2) year = '20' + year;
     let month = parts[1].padStart(2, '0');
     return `${year}-${month}`;
   }
@@ -105,7 +101,6 @@ const calculateRowCosts = (row) => {
   return { ...row, totalQty, totalFabricCost, totalTrimCost, unitTotalCost, amount, profit, profitMargin };
 };
 
-// --- 마진율 다단계 색상 테마 헬퍼 함수 ---
 const getMarginBadgeClass = (margin) => {
   if (margin < 0) return 'bg-red-100 text-red-700 border border-red-200';
   if (margin < 3) return 'bg-slate-100 text-slate-700 border border-slate-200';
@@ -132,8 +127,6 @@ const getMarginBgClass = (margin) => {
   if (margin < 15) return 'bg-teal-500';
   return 'bg-emerald-500';
 };
-// -----------------------------------------
-
 
 // ============================================================================
 // 2. LOGIN COMPONENT
@@ -223,8 +216,9 @@ const Login = ({ onLogin }) => {
 const Dashboard = ({ data }) => {
   // 상단 요약용 마스터 필터
   const [selectedBuyerDashboard, setSelectedBuyerDashboard] = useState('ALL');
+  const [selectedYearDashboard, setSelectedYearDashboard] = useState('ALL'); // 🆕 연도 필터 추가
   
-  // 하단 위젯 전용 필터 상태들 추가
+  // 하단 위젯 전용 필터 상태들
   const [itemBuyerFilter, setItemBuyerFilter] = useState('ALL');
   const [selectedItemFilter, setSelectedItemFilter] = useState('ALL');
   
@@ -240,10 +234,34 @@ const Dashboard = ({ data }) => {
   // 원가가 계산된 전체 Base 데이터
   const baseData = useMemo(() => data.map(calculateRowCosts), [data]);
 
-  // 상단 요약 카드용 데이터 (마스터 바이어 필터 적용)
+  // 🆕 전체 데이터 기반 사용 가능한 연도 추출 (상단 글로벌 필터용)
+  const globalAvailableYears = useMemo(() => {
+    const years = new Set();
+    baseData.forEach(row => {
+      if (row.status === 'Cancel') return;
+      const monthKey = getMonthKey(row.delivery);
+      if (monthKey !== 'TBD') {
+        years.add(monthKey.split('-')[0]);
+      }
+    });
+    return Array.from(years).sort();
+  }, [baseData]);
+
+  // 상단 요약 카드용 데이터 (마스터 바이어 및 연도 필터 적용)
   const dashboardData = useMemo(() => {
-    return baseData.filter(row => selectedBuyerDashboard === 'ALL' || row.buyer === selectedBuyerDashboard);
-  }, [baseData, selectedBuyerDashboard]);
+    return baseData.filter(row => {
+      const matchBuyer = selectedBuyerDashboard === 'ALL' || row.buyer === selectedBuyerDashboard;
+      
+      let matchYear = true;
+      if (selectedYearDashboard !== 'ALL') {
+        const monthKey = getMonthKey(row.delivery);
+        const year = monthKey !== 'TBD' ? monthKey.split('-')[0] : 'TBD';
+        matchYear = year === selectedYearDashboard;
+      }
+
+      return matchBuyer && matchYear;
+    });
+  }, [baseData, selectedBuyerDashboard, selectedYearDashboard]);
 
   // 상단 요약 카드 집계 로직
   const summary = useMemo(() => {
@@ -307,9 +325,9 @@ const Dashboard = ({ data }) => {
       if (row.status === 'Cancel') return;
       if (monthBuyerFilter !== 'ALL' && row.buyer !== monthBuyerFilter) return;
 
-      const monthKey = getMonthKey(row.delivery); // 'YYYY-MM' 포맷으로 확실하게 통일 (날짜 합계)
+      const monthKey = getMonthKey(row.delivery);
       if (monthKey !== 'TBD') {
-        years.add(monthKey.split('-')[0]); // 사용 가능한 연도만 추출
+        years.add(monthKey.split('-')[0]); 
       }
 
       if (!stats[monthKey]) stats[monthKey] = { month: monthKey, qty: 0, sales: 0, profit: 0 };
@@ -347,16 +365,28 @@ const Dashboard = ({ data }) => {
             <LayoutDashboard className="w-5 h-5 text-blue-600" />
             <h2 className="font-bold text-slate-800">Analytics Dashboard</h2>
           </div>
-          <div className="flex items-center gap-3 w-full sm:w-auto">
-            <label className="text-sm font-semibold text-slate-600 whitespace-nowrap">Global Buyer Filter :</label>
-            <select
-              value={selectedBuyerDashboard} onChange={(e) => setSelectedBuyerDashboard(e.target.value)}
-              className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer flex-1 sm:flex-none min-w-[150px]"
-            >
-              {buyerOptions.map(b => (
-                <option key={b} value={b}>{b === 'ALL' ? '전체 바이어 (All Buyers)' : b}</option>
-              ))}
-            </select>
+          <div className="flex items-center gap-3 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+            <label className="text-sm font-semibold text-slate-600 whitespace-nowrap">Global Filter :</label>
+            <div className="flex gap-2 flex-1 sm:flex-none">
+              <select
+                value={selectedBuyerDashboard} onChange={(e) => setSelectedBuyerDashboard(e.target.value)}
+                className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer flex-1 sm:flex-none min-w-[140px]"
+              >
+                {buyerOptions.map(b => (
+                  <option key={b} value={b}>{b === 'ALL' ? '전체 바이어 (All)' : b}</option>
+                ))}
+              </select>
+              <select
+                value={selectedYearDashboard} onChange={(e) => setSelectedYearDashboard(e.target.value)}
+                className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer flex-1 sm:flex-none min-w-[120px]"
+              >
+                <option value="ALL">전체 연도 (All)</option>
+                {globalAvailableYears.map(y => (
+                  <option key={y} value={y}>{y}년</option>
+                ))}
+                <option value="TBD">TBD (미정)</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -735,7 +765,6 @@ const DataSheet = ({ data, onUpdateData }) => {
     onUpdateData([...data, newRow]);
   };
 
-  // 기존 행의 정보를 복사해서 해당 위치 바로 아래에 새 행을 추가하는 함수
   const handleInsertRowAfter = (sourceRow) => {
     const newRow = {
       id: Date.now(),
@@ -746,7 +775,7 @@ const DataSheet = ({ data, onUpdateData }) => {
       imageUrl: sourceRow.imageUrl || '',
       po: sourceRow.po || '',
       delivery: sourceRow.delivery || '',
-      color: '', // 컬러와 수량은 보통 다르므로 초기화
+      color: '', 
       s: 0, m: 0, l: 0, xl: 0, xxl: 0,
       fab1Name: sourceRow.fab1Name || '', fab1Loss: sourceRow.fab1Loss || 0, fab1Cons: sourceRow.fab1Cons || 0, fab1Price: sourceRow.fab1Price || 0,
       fab2Name: sourceRow.fab2Name || '', fab2Loss: sourceRow.fab2Loss || 0, fab2Cons: sourceRow.fab2Cons || 0, fab2Price: sourceRow.fab2Price || 0,
@@ -756,11 +785,10 @@ const DataSheet = ({ data, onUpdateData }) => {
     };
 
     const newData = [...data];
-    // 정렬이 안되어있는 원본 배열 기준 위치를 찾음
     const index = newData.findIndex(r => r.id === sourceRow.id);
     
     if (index !== -1) {
-      newData.splice(index + 1, 0, newRow); // 해당 행 바로 뒤에 삽입
+      newData.splice(index + 1, 0, newRow); 
     } else {
       newData.push(newRow);
     }
@@ -1068,7 +1096,6 @@ export default function App() {
         headers.forEach((h, idx) => {
           let val = values[idx];
           if (numericFields.includes(h)) {
-            // 숫자 필드인 경우 천 단위 콤마(,)를 제거한 후 숫자로 변환
             val = val ? Number(String(val).replace(/,/g, '').trim()) || 0 : 0;
           }
           newRow[h] = val;
