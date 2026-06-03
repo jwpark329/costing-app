@@ -937,7 +937,10 @@ export default function App() {
         
         headers.forEach((h, idx) => {
           let val = values[idx];
-          if (numericFields.includes(h)) val = Number(val) || 0;
+          if (numericFields.includes(h)) {
+            // 숫자 필드인 경우 천 단위 콤마(,)를 제거한 후 숫자로 변환
+            val = val ? Number(String(val).replace(/,/g, '').trim()) || 0 : 0;
+          }
           newRow[h] = val;
         });
         
