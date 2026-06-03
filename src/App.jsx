@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 
 // ============================================================================
-// 1. UTILS & CONSTANTS (utils.js 역할)
+// 1. UTILS & CONSTANTS
 // ============================================================================
 const initialData = [
   { 
@@ -58,7 +58,6 @@ const formatDeliveryDate = (val) => {
   return strVal;
 };
 
-// 개별 행에 대한 핵심 계산 (수량, 원가, 이익 등)
 const calculateRowCosts = (row) => {
   const totalQty = (Number(row.s) || 0) + (Number(row.m) || 0) + (Number(row.l) || 0) + (Number(row.xl) || 0) + (Number(row.xxl) || 0);
   const fab1LossRate = 1 + ((Number(row.fab1Loss) || 0) / 100);
@@ -81,7 +80,7 @@ const calculateRowCosts = (row) => {
 
 
 // ============================================================================
-// 2. LOGIN COMPONENT (Login.jsx 역할)
+// 2. LOGIN COMPONENT
 // ============================================================================
 const Login = ({ onLogin }) => {
   const [loginId, setLoginId] = useState("");
@@ -101,16 +100,13 @@ const Login = ({ onLogin }) => {
     <div 
       className="min-h-screen flex items-center justify-center p-4 font-sans relative overflow-hidden"
       style={{
-        // 패션, 테일러링, 의류 원단 느낌의 세련된 배경 이미지
         backgroundImage: "url('https://images.unsplash.com/photo-1558769132-cb1aea458c5e?q=80&w=2000&auto=format&fit=crop')",
         backgroundSize: "cover",
         backgroundPosition: "center"
       }}
     >
-      {/* 배경을 살짝 어둡게 누르고 블러 처리하여 로그인 폼 집중도 향상 */}
       <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-[2px]"></div>
 
-      {/* 글래스모피즘(Glassmorphism) 효과가 적용된 로그인 폼 */}
       <div className="bg-white/95 backdrop-blur-xl p-8 rounded-2xl shadow-2xl max-w-sm w-full border border-white/40 animate-in fade-in zoom-in-95 duration-500 relative z-10">
         <div className="flex flex-col items-center mb-8">
           <div className="bg-blue-600 p-3 rounded-xl mb-4 shadow-lg shadow-blue-600/30">
@@ -129,7 +125,7 @@ const Login = ({ onLogin }) => {
               </div>
               <input 
                 type="text" value={loginId} onChange={(e) => setLoginId(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
+                className="w-full pl-10 pr-4 py-2 bg-slate-50/50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
                 placeholder="아이디를 입력하세요" autoFocus
               />
             </div>
@@ -143,7 +139,7 @@ const Login = ({ onLogin }) => {
               </div>
               <input 
                 type="password" value={loginPw} onChange={(e) => setLoginPw(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
+                className="w-full pl-10 pr-4 py-2 bg-slate-50/50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
                 placeholder="비밀번호를 입력하세요"
               />
             </div>
@@ -155,7 +151,7 @@ const Login = ({ onLogin }) => {
             </div>
           )}
 
-          <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors mt-6 shadow-sm">
+          <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors mt-6 shadow-md shadow-blue-600/20">
             <LogIn className="w-4 h-4" /> 로그인
           </button>
         </form>
@@ -166,25 +162,33 @@ const Login = ({ onLogin }) => {
 
 
 // ============================================================================
-// 3. DASHBOARD COMPONENT (Dashboard.jsx 역할)
+// 3. DASHBOARD COMPONENT
 // ============================================================================
 const Dashboard = ({ data }) => {
+  // 상단 요약용 마스터 필터
   const [selectedBuyerDashboard, setSelectedBuyerDashboard] = useState('ALL');
+  
+  // 하단 위젯 전용 필터 상태들 추가
+  const [itemBuyerFilter, setItemBuyerFilter] = useState('ALL');
   const [selectedItemFilter, setSelectedItemFilter] = useState('ALL');
+  
+  const [monthBuyerFilter, setMonthBuyerFilter] = useState('ALL');
   const [selectedMonthFilter, setSelectedMonthFilter] = useState('ALL');
-
-  // Dashboard용 데이터 전처리 및 필터링
-  const dashboardData = useMemo(() => {
-    return data
-      .map(calculateRowCosts)
-      .filter(row => selectedBuyerDashboard === 'ALL' || row.buyer === selectedBuyerDashboard);
-  }, [data, selectedBuyerDashboard]);
 
   const buyerOptions = useMemo(() => {
     const buyers = new Set(data.map(d => d.buyer).filter(Boolean));
     return ['ALL', ...Array.from(buyers).sort()];
   }, [data]);
 
+  // 원가가 계산된 전체 Base 데이터
+  const baseData = useMemo(() => data.map(calculateRowCosts), [data]);
+
+  // 상단 요약 카드용 데이터 (마스터 바이어 필터 적용)
+  const dashboardData = useMemo(() => {
+    return baseData.filter(row => selectedBuyerDashboard === 'ALL' || row.buyer === selectedBuyerDashboard);
+  }, [baseData, selectedBuyerDashboard]);
+
+  // 상단 요약 카드 집계 로직
   const summary = useMemo(() => {
     let stats = {
       total: { qty: 0, sales: 0, profit: 0, margin: 0 },
@@ -215,42 +219,57 @@ const Dashboard = ({ data }) => {
     return stats;
   }, [dashboardData]);
 
-  const itemStats = useMemo(() => {
+  // 하단 아이템별 통계 (아이템 전용 바이어 필터 적용)
+  const { itemStatsList, itemTotalSales } = useMemo(() => {
     const stats = {};
-    dashboardData.forEach(row => {
-      if (!row.item || row.status === 'Cancel') return;
+    let total = 0;
+    
+    baseData.forEach(row => {
+      if (row.status === 'Cancel' || !row.item) return;
+      if (itemBuyerFilter !== 'ALL' && row.buyer !== itemBuyerFilter) return;
+
       if (!stats[row.item]) stats[row.item] = { item: row.item, qty: 0, sales: 0, profit: 0 };
       stats[row.item].qty += row.totalQty;
       stats[row.item].sales += row.amount;
       stats[row.item].profit += (row.profit * row.totalQty);
+      total += row.amount;
     });
-    return Object.values(stats).sort((a, b) => b.sales - a.sales);
-  }, [dashboardData]);
 
-  const monthStats = useMemo(() => {
+    return {
+      itemStatsList: Object.values(stats).sort((a, b) => b.sales - a.sales),
+      itemTotalSales: total
+    };
+  }, [baseData, itemBuyerFilter]);
+
+  // 하단 월별 납기 통계 (납기 전용 바이어 필터 적용)
+  const monthStatsList = useMemo(() => {
     const stats = {};
-    dashboardData.forEach(row => {
+    
+    baseData.forEach(row => {
       if (row.status === 'Cancel') return;
+      if (monthBuyerFilter !== 'ALL' && row.buyer !== monthBuyerFilter) return;
+
       const month = (row.delivery && typeof row.delivery === 'string' && row.delivery.length >= 7) ? row.delivery.substring(0, 7) : 'TBD';
       if (!stats[month]) stats[month] = { month, qty: 0, sales: 0, profit: 0 };
       stats[month].qty += row.totalQty;
       stats[month].sales += row.amount;
       stats[month].profit += (row.profit * row.totalQty);
     });
+    
     return Object.values(stats).sort((a, b) => a.month.localeCompare(b.month));
-  }, [dashboardData]);
+  }, [baseData, monthBuyerFilter]);
 
   return (
     <div className="h-full overflow-y-auto pb-6">
       <div className="space-y-4 animate-in fade-in duration-500 max-w-[1600px] mx-auto w-full">
-        {/* 상단 필터 */}
+        {/* 상단 글로벌 필터 */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
           <div className="flex items-center gap-2">
             <LayoutDashboard className="w-5 h-5 text-blue-600" />
             <h2 className="font-bold text-slate-800">Analytics Dashboard</h2>
           </div>
           <div className="flex items-center gap-3 w-full sm:w-auto">
-            <label className="text-sm font-semibold text-slate-600 whitespace-nowrap">Buyer Filter :</label>
+            <label className="text-sm font-semibold text-slate-600 whitespace-nowrap">Global Buyer Filter :</label>
             <select
               value={selectedBuyerDashboard} onChange={(e) => setSelectedBuyerDashboard(e.target.value)}
               className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer flex-1 sm:flex-none min-w-[150px]"
@@ -369,23 +388,31 @@ const Dashboard = ({ data }) => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* 아이템별 실적 */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-            <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-2">
+            <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <BarChart3 className="w-5 h-5 text-slate-500" />
                 <h3 className="font-semibold text-slate-800">아이템별 실적 (Item Performance)</h3>
               </div>
-              <select
-                value={selectedItemFilter} onChange={(e) => setSelectedItemFilter(e.target.value)}
-                className="text-xs border border-slate-200 rounded px-2 py-1 bg-white text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm cursor-pointer"
-              >
-                <option value="ALL">전체 아이템</option>
-                {itemStats.map(s => <option key={s.item} value={s.item}>{s.item}</option>)}
-              </select>
+              <div className="flex items-center gap-2">
+                <select
+                  value={itemBuyerFilter} onChange={(e) => setItemBuyerFilter(e.target.value)}
+                  className="text-xs border border-slate-200 rounded px-2 py-1 bg-white text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm cursor-pointer"
+                >
+                  {buyerOptions.map(b => <option key={b} value={b}>{b === 'ALL' ? '전체 바이어' : b}</option>)}
+                </select>
+                <select
+                  value={selectedItemFilter} onChange={(e) => setSelectedItemFilter(e.target.value)}
+                  className="text-xs border border-slate-200 rounded px-2 py-1 bg-white text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm cursor-pointer max-w-[120px] truncate"
+                >
+                  <option value="ALL">전체 아이템</option>
+                  {itemStatsList.map(s => <option key={s.item} value={s.item}>{s.item}</option>)}
+                </select>
+              </div>
             </div>
             <div className="p-4 flex-1 overflow-auto">
               <div className="space-y-4">
-                {(selectedItemFilter === 'ALL' ? itemStats : itemStats.filter(s => s.item === selectedItemFilter)).map((stat, idx) => {
-                  const salesPercent = summary.total.sales > 0 ? (stat.sales / summary.total.sales) * 100 : 0;
+                {(selectedItemFilter === 'ALL' ? itemStatsList : itemStatsList.filter(s => s.item === selectedItemFilter)).map((stat, idx) => {
+                  const salesPercent = itemTotalSales > 0 ? (stat.sales / itemTotalSales) * 100 : 0;
                   const marginRate = stat.sales > 0 ? (stat.profit / stat.sales) * 100 : 0;
                   return (
                     <div key={idx} className="flex flex-col gap-2 p-3 rounded-lg border border-slate-100 bg-white hover:border-blue-200 hover:shadow-sm transition-all group">
@@ -409,25 +436,33 @@ const Dashboard = ({ data }) => {
                     </div>
                   );
                 })}
-                {itemStats.length === 0 && <div className="text-center text-slate-400 py-8 text-sm">데이터가 없습니다.</div>}
+                {itemStatsList.length === 0 && <div className="text-center text-slate-400 py-8 text-sm">데이터가 없습니다.</div>}
               </div>
             </div>
           </div>
 
-          {/* 월별 납기 예상 */}
+          {/* 월별 납기 */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-            <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-2">
+            <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Calendar className="w-5 h-5 text-slate-500" />
-                <h3 className="font-semibold text-slate-800">월별 납기 예상 (Delivery Forecast)</h3>
+                <h3 className="font-semibold text-slate-800">월별 납기 (Delivery)</h3>
               </div>
-              <select
-                value={selectedMonthFilter} onChange={(e) => setSelectedMonthFilter(e.target.value)}
-                className="text-xs border border-slate-200 rounded px-2 py-1 bg-white text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm cursor-pointer"
-              >
-                <option value="ALL">전체 기간</option>
-                {monthStats.map(s => <option key={s.month} value={s.month}>{s.month}</option>)}
-              </select>
+              <div className="flex items-center gap-2">
+                <select
+                  value={monthBuyerFilter} onChange={(e) => setMonthBuyerFilter(e.target.value)}
+                  className="text-xs border border-slate-200 rounded px-2 py-1 bg-white text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm cursor-pointer"
+                >
+                  {buyerOptions.map(b => <option key={b} value={b}>{b === 'ALL' ? '전체 바이어' : b}</option>)}
+                </select>
+                <select
+                  value={selectedMonthFilter} onChange={(e) => setSelectedMonthFilter(e.target.value)}
+                  className="text-xs border border-slate-200 rounded px-2 py-1 bg-white text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm cursor-pointer max-w-[100px]"
+                >
+                  <option value="ALL">전체 기간</option>
+                  {monthStatsList.map(s => <option key={s.month} value={s.month}>{s.month}</option>)}
+                </select>
+              </div>
             </div>
             <div className="p-4 flex-1 overflow-auto">
               <table className="w-full text-sm text-left border-collapse">
@@ -441,7 +476,7 @@ const Dashboard = ({ data }) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {(selectedMonthFilter === 'ALL' ? monthStats : monthStats.filter(s => s.month === selectedMonthFilter)).map((stat, idx) => {
+                  {(selectedMonthFilter === 'ALL' ? monthStatsList : monthStatsList.filter(s => s.month === selectedMonthFilter)).map((stat, idx) => {
                     const marginRate = stat.sales > 0 ? (stat.profit / stat.sales) * 100 : 0;
                     return (
                       <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
@@ -457,7 +492,7 @@ const Dashboard = ({ data }) => {
                       </tr>
                     );
                   })}
-                  {monthStats.length === 0 && (
+                  {monthStatsList.length === 0 && (
                     <tr><td colSpan="5" className="text-center text-slate-400 py-8 text-sm">데이터가 없습니다.</td></tr>
                   )}
                 </tbody>
@@ -472,7 +507,7 @@ const Dashboard = ({ data }) => {
 
 
 // ============================================================================
-// 4. DATASHEET COMPONENT (DataSheet.jsx 역할)
+// 4. DATASHEET COMPONENT
 // ============================================================================
 const DataSheet = ({ data, onUpdateData }) => {
   const [showTrims, setShowTrims] = useState(false);
@@ -483,7 +518,6 @@ const DataSheet = ({ data, onUpdateData }) => {
   const [editingImageId, setEditingImageId] = useState(null);
   const fileInputRef = useRef(null);
 
-  // 데이터 정렬 및 소계 계산
   const processedData = useMemo(() => {
     let calculatedData = data.map(calculateRowCosts);
 
@@ -561,7 +595,7 @@ const DataSheet = ({ data, onUpdateData }) => {
     
     row[field] = newValue;
     newData[rowIndex] = row;
-    onUpdateData(newData); // 부모 컴포넌트로 데이터 전송
+    onUpdateData(newData);
 
     if (direction) {
       const currentFieldIndex = editableColumns.indexOf(field);
@@ -837,7 +871,7 @@ const DataSheet = ({ data, onUpdateData }) => {
 
 
 // ============================================================================
-// 5. MAIN APP COMPONENT (App.jsx 역할 - 최상위 관리자)
+// 5. MAIN APP COMPONENT
 // ============================================================================
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -925,7 +959,6 @@ export default function App() {
     <div className="h-screen overflow-hidden bg-slate-50 flex flex-col font-sans">
       <input type="file" accept=".csv" ref={csvInputRef} onChange={handleImportCSV} className="hidden" />
 
-      {/* Global Header */}
       <header className="bg-slate-900 border-b border-slate-800 px-6 py-4 flex flex-wrap items-center justify-between sticky top-0 z-50 shadow-md gap-4 shrink-0">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-3">
@@ -967,7 +1000,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Content Area */}
       <main className="flex-1 overflow-hidden p-4 lg:px-6 w-full flex flex-col">
         {activeTab === 'dashboard' ? (
           <Dashboard data={data} />
