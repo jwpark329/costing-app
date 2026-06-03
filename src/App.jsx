@@ -735,6 +735,39 @@ const DataSheet = ({ data, onUpdateData }) => {
     onUpdateData([...data, newRow]);
   };
 
+  // 기존 행의 정보를 복사해서 해당 위치 바로 아래에 새 행을 추가하는 함수
+  const handleInsertRowAfter = (sourceRow) => {
+    const newRow = {
+      id: Date.now(),
+      buyer: sourceRow.buyer || '',
+      status: sourceRow.status || 'Open',
+      style: sourceRow.style || '',
+      item: sourceRow.item || '',
+      imageUrl: sourceRow.imageUrl || '',
+      po: sourceRow.po || '',
+      delivery: sourceRow.delivery || '',
+      color: '', // 컬러와 수량은 보통 다르므로 초기화
+      s: 0, m: 0, l: 0, xl: 0, xxl: 0,
+      fab1Name: sourceRow.fab1Name || '', fab1Loss: sourceRow.fab1Loss || 0, fab1Cons: sourceRow.fab1Cons || 0, fab1Price: sourceRow.fab1Price || 0,
+      fab2Name: sourceRow.fab2Name || '', fab2Loss: sourceRow.fab2Loss || 0, fab2Cons: sourceRow.fab2Cons || 0, fab2Price: sourceRow.fab2Price || 0,
+      trimThread: sourceRow.trimThread || 0, trimButton: sourceRow.trimButton || 0, trimPrint: sourceRow.trimPrint || 0, trimLabel: sourceRow.trimLabel || 0,
+      cmt: sourceRow.cmt || 0,
+      fob: sourceRow.fob || 0
+    };
+
+    const newData = [...data];
+    // 정렬이 안되어있는 원본 배열 기준 위치를 찾음
+    const index = newData.findIndex(r => r.id === sourceRow.id);
+    
+    if (index !== -1) {
+      newData.splice(index + 1, 0, newRow); // 해당 행 바로 뒤에 삽입
+    } else {
+      newData.push(newRow);
+    }
+    
+    onUpdateData(newData);
+  };
+
   const handleDeleteRow = (id) => {
     onUpdateData(data.filter(row => row.id !== id));
   };
@@ -877,7 +910,7 @@ const DataSheet = ({ data, onUpdateData }) => {
               <SortHeader label="Unit Cost" sortKey="unitTotalCost" rowSpan="2" className="bg-slate-200" />
               <SortHeader label="Profit($)" sortKey="profit" rowSpan="2" className="bg-sky-50/50 text-sky-800" />
               <SortHeader label="Profit(%)" sortKey="profitMargin" rowSpan="2" className="bg-sky-50/50 text-sky-800" />
-              <th rowSpan="2" className="px-2 py-2 border-b border-slate-200 bg-slate-100 text-center">Del</th>
+              <th rowSpan="2" className="px-2 py-2 border-b border-slate-200 bg-slate-100 text-center">Action</th>
             </tr>
             <tr className="bg-slate-50 text-slate-500 text-[10px]">
               <th className="px-2 py-1 border-r border-b border-slate-200 text-right">S</th><th className="px-2 py-1 border-r border-b border-slate-200 text-right">M</th><th className="px-2 py-1 border-r border-b border-slate-200 text-right">L</th><th className="px-2 py-1 border-r border-b border-slate-200 text-right">XL</th><th className="px-2 py-1 border-r border-b border-slate-200 text-right text-blue-600 font-bold">XXL</th>
@@ -947,7 +980,14 @@ const DataSheet = ({ data, onUpdateData }) => {
                     ) : '-'}
                   </td>
                   <td className="px-2 py-2 text-center align-middle">
-                    <button onClick={() => handleDeleteRow(row.id)} className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors" title="행 삭제"><Trash2 className="w-4 h-4" /></button>
+                    <div className="flex items-center justify-center gap-1">
+                      <button onClick={() => handleInsertRowAfter(row)} className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="현재 스타일 내용 복사하여 아래에 추가">
+                        <Plus className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => handleDeleteRow(row.id)} className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors" title="행 삭제">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
