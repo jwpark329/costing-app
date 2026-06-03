@@ -220,6 +220,7 @@ const Dashboard = ({ data }) => {
   
   // 하단 위젯 전용 필터 상태들
   const [itemBuyerFilter, setItemBuyerFilter] = useState('ALL');
+  const [itemYearFilter, setItemYearFilter] = useState('ALL'); // 🆕 아이템 실적 연도 필터
   const [selectedItemFilter, setSelectedItemFilter] = useState('ALL');
   
   const [monthBuyerFilter, setMonthBuyerFilter] = useState('ALL');
@@ -294,7 +295,7 @@ const Dashboard = ({ data }) => {
     return stats;
   }, [dashboardData]);
 
-  // 하단 아이템별 통계 (아이템 전용 바이어 필터 적용)
+  // 하단 아이템별 통계 (아이템 전용 바이어 및 연도 필터 적용)
   const { itemStatsList, itemTotalSales } = useMemo(() => {
     const stats = {};
     let total = 0;
@@ -302,6 +303,15 @@ const Dashboard = ({ data }) => {
     baseData.forEach(row => {
       if (row.status === 'Cancel' || !row.item) return;
       if (itemBuyerFilter !== 'ALL' && row.buyer !== itemBuyerFilter) return;
+
+      // 🆕 아이템 연도 필터 로직 추가
+      let matchYear = true;
+      if (itemYearFilter !== 'ALL') {
+        const monthKey = getMonthKey(row.delivery);
+        const year = monthKey !== 'TBD' ? monthKey.split('-')[0] : 'TBD';
+        matchYear = year === itemYearFilter;
+      }
+      if (!matchYear) return;
 
       if (!stats[row.item]) stats[row.item] = { item: row.item, qty: 0, sales: 0, profit: 0 };
       stats[row.item].qty += row.totalQty;
@@ -314,7 +324,7 @@ const Dashboard = ({ data }) => {
       itemStatsList: Object.values(stats).sort((a, b) => b.sales - a.sales),
       itemTotalSales: total
     };
-  }, [baseData, itemBuyerFilter]);
+  }, [baseData, itemBuyerFilter, itemYearFilter]);
 
   // 하단 월별 납기 통계 (납기 전용 바이어, 연도, 월 필터 적용)
   const { rawMonthStats, availableYears } = useMemo(() => {
@@ -502,12 +512,20 @@ const Dashboard = ({ data }) => {
                 <BarChart3 className="w-5 h-5 text-slate-500" />
                 <h3 className="font-semibold text-slate-800">아이템별 실적 (Item Performance)</h3>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap justify-end">
                 <select
                   value={itemBuyerFilter} onChange={(e) => setItemBuyerFilter(e.target.value)}
                   className="text-xs border border-slate-200 rounded px-2 py-1 bg-white text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm cursor-pointer"
                 >
                   {buyerOptions.map(b => <option key={b} value={b}>{b === 'ALL' ? '전체 바이어' : b}</option>)}
+                </select>
+                <select
+                  value={itemYearFilter} onChange={(e) => setItemYearFilter(e.target.value)}
+                  className="text-xs border border-slate-200 rounded px-2 py-1 bg-white text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-sm cursor-pointer max-w-[90px]"
+                >
+                  <option value="ALL">전체 연도</option>
+                  {globalAvailableYears.map(y => <option key={y} value={y}>{y}년</option>)}
+                  <option value="TBD">TBD</option>
                 </select>
                 <select
                   value={selectedItemFilter} onChange={(e) => setSelectedItemFilter(e.target.value)}
